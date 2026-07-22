@@ -20,7 +20,7 @@
 #   ./scripts/setup-curio-devnet.sh
 #   ./scripts/setup-curio-devnet.sh --deploy
 #   ./scripts/setup-curio-devnet.sh --from-env
-#   CURIO_DIR=./extern/curio POREP_MARKET_DIR=../porep-market ./scripts/setup-curio-devnet.sh
+#   CURIO_DIR=./extern/curio POREP_MARKET_DIR=./extern/porep-market ./scripts/setup-curio-devnet.sh
 
 set -euo pipefail
 
@@ -30,7 +30,7 @@ readonly NOOP_META_ALLOCATOR_ARTIFACT="${SCRIPT_DIR}/NoOpMetaAllocator.json"
 readonly TOOLING_DIR="${TOOLING_DIR:-${REPO_ROOT}/../filecoin-porep-market-tooling}"
 
 CURIO_DIR="${CURIO_DIR:-${REPO_ROOT}/extern/curio}"
-POREP_MARKET_DIR="${POREP_MARKET_DIR:-${REPO_ROOT}/../porep-market}"
+POREP_MARKET_DIR="${POREP_MARKET_DIR:-${REPO_ROOT}/extern/porep-market}"
 RPC_URL="${RPC_URL:-http://127.0.0.1:1234/rpc/v1}"
 LOTUS_CONTAINER="${LOTUS_CONTAINER:-lotus}"
 LOTUS_MINER_CONTAINER="${LOTUS_MINER_CONTAINER:-lotus-miner}"
@@ -60,7 +60,7 @@ Options:
 
 Environment:
   CURIO_DIR              Path to curio checkout (default: ./extern/curio submodule)
-  POREP_MARKET_DIR       Path to porep-market checkout (default: ../porep-market)
+  POREP_MARKET_DIR       Path to porep-market checkout (default: ./extern/porep-market)
   TOOLING_DIR            Path to filecoin-porep-market-tooling (default: ../filecoin-porep-market-tooling)
   RPC_URL                Lotus FEVM RPC (default: http://127.0.0.1:1234/rpc/v1)
   LOTUS_CONTAINER        Docker container name (default: lotus)

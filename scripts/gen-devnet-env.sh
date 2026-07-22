@@ -21,7 +21,7 @@ IFS=$'\n\t'
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-readonly POREP_MARKET_DIR="${POREP_MARKET_DIR:-${REPO_ROOT}/../porep-market}"
+readonly POREP_MARKET_DIR="${POREP_MARKET_DIR:-${REPO_ROOT}/extern/porep-market}"
 
 # Write into the porep-market checkout by default (Deploy.s.sol / justfile live there).
 cd "$POREP_MARKET_DIR"

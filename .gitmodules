@@ -1,3 +1,6 @@
 [submodule "extern/curio"]
 	path = extern/curio
 	url = https://github.com/filecoin-project/curio.git
+[submodule "extern/porep-market"]
+	path = extern/porep-market
+	url = https://github.com/fidlabs/porep-market.git

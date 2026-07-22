@@ -2,17 +2,19 @@
 
 Machinery to set up a **local Curio docker-devnet** capable of running **PoRep Market deals** and supporting **large paid retrievals**.
 
+Pinned submodule versions: **Curio v1.28.2**, **porep-market v1.2.0**.
+
 ## Dependencies
 
 | Dependency | Role |
 |------------|------|
-| [`curio`](extern/curio) (git submodule, pinned to **v1.28.2**) | Lotus + Curio docker stack |
-| `porep-market` | PoRep Market / SPRegistry / Client contracts |
+| [`curio`](extern/curio) (git submodule, **v1.28.2**) | Lotus + Curio docker stack |
+| [`porep-market`](extern/porep-market) (git submodule, **v1.2.0**) | PoRep Market / SPRegistry / Client contracts |
 | `filecoin-porep-market-tooling` | Client/SP CLI for propose → allocate → claim |
 | `large-paid-retrievals` | `sp-proxy` + `retrieval-client` (MPP / Filecoin Pay) |
 | Singularity (local content provider) | Piece CARs / manifest for deals |
 
-`curio` is vendored under [`extern/curio`](extern/curio) as a git submodule today; the remaining dependencies will be brought in the same way.
+`curio` and `porep-market` are vendored under [`extern/`](extern/) as git submodules; the remaining dependencies will be brought in the same way.
 
 Clone and initialize:
 
