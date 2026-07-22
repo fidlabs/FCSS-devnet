@@ -1,0 +1,25 @@
+diff --git a/docker/docker-compose.yaml b/docker/docker-compose.yaml
+index c86727b7..4ffafbbe 100644
+--- a/docker/docker-compose.yaml
++++ b/docker/docker-compose.yaml
+@@ -109,6 +109,11 @@ services:
+       - CURIO_REPO_PATH=/var/lib/curio
+       - CURIO_HARMONYDB_HOSTS=yugabyte
+       - CONTRACT_ENV_FILE=/var/lib/contracts/curio-devnet.env
++      # Host-reachable IPNI/retrieval announce URL (overrides HTTP.DomainName for ads).
++      # Indexer reaches Curio via published host port; host clients use the same name.
++      - DEV_CURIO_EXTERNAL_URL=http://host.docker.internal:12310
++    extra_hosts:
++      - "host.docker.internal:host-gateway"
+     restart: unless-stopped
+     logging: *default-logging
+     volumes:
+@@ -172,6 +177,8 @@ services:
+       - "3003:3003"
+     environment:
+       - STORETHEINDEX_PATH=/var/lib/indexer
++    extra_hosts:
++      - "host.docker.internal:host-gateway"
+     restart: unless-stopped
+     logging: *default-logging
+     volumes:

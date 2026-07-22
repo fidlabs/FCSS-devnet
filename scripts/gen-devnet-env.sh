@@ -26,7 +26,7 @@ readonly POREP_MARKET_DIR="${POREP_MARKET_DIR:-${REPO_ROOT}/../porep-market}"
 # Write into the porep-market checkout by default (Deploy.s.sol / justfile live there).
 cd "$POREP_MARKET_DIR"
 
-readonly DEFAULT_CONTRACTS_DIR="../curio/docker/data/contracts"
+readonly DEFAULT_CONTRACTS_DIR="${REPO_ROOT}/extern/curio/docker/data/contracts"
 readonly DEFAULT_RPC_URL="http://127.0.0.1:1234/rpc/v1"
 readonly DEFAULT_OUT=".env"
 
@@ -41,7 +41,7 @@ Usage: gen-devnet-env.sh [options]
 
 Options:
   --contracts-dir DIR   Curio contracts artifact dir
-                        (default: ../curio/docker/data/contracts or CURIO_CONTRACTS_DIR)
+                        (default: <repo>/extern/curio/docker/data/contracts or CURIO_CONTRACTS_DIR)
   --rpc-url URL         Lotus HTTP RPC for RPC_TEST
                         (default: http://127.0.0.1:1234/rpc/v1 or CURIO_RPC_URL)
   --out FILE            Output path (default: .env or CURIO_ENV_OUT)

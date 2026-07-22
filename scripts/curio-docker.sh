@@ -8,7 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-CURIO_DIR="${CURIO_DIR:-${REPO_ROOT}/../curio}"
+CURIO_DIR="${CURIO_DIR:-${REPO_ROOT}/extern/curio}"
 CURIO_COMPOSE_DIR="${CURIO_COMPOSE_DIR:-${CURIO_DIR}/docker}"
 CURIO_COMPOSE_PROJECT="${CURIO_COMPOSE_PROJECT:-curio-devnet}"
 CURIO_COMPOSE_SERVICE="${CURIO_COMPOSE_SERVICE:-curio}"

@@ -1,0 +1,3 @@
+[submodule "extern/curio"]
+	path = extern/curio
+	url = https://github.com/filecoin-project/curio.git

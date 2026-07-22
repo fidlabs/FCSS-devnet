@@ -1,0 +1,16 @@
+diff --git a/Dockerfile b/Dockerfile
+index 79ab2fe1..0fb92916 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -34,7 +34,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
+ 
+ COPY . .
+ 
+-RUN git submodule update --init
++# porep-curio-devnet: skip in-image git submodule update
++# Nested Curio-as-submodule .git gitdirs are invalid inside the build image.
++# Submodules are initialized on the host by scripts/setup-submodules.sh.
++RUN test -d extern/filecoin-ffi
+ 
+ ### make configurable filecoin-ffi build
+ ARG FFI_BUILD_FROM_SOURCE=0

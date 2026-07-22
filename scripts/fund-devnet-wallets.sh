@@ -19,7 +19,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CLIENT_KEY="${CLIENT_KEY:-$ROOT/../large-paid-retrievals/client.key}"
 SP_KEY="${SP_KEY:-$ROOT/../large-paid-retrievals/sp.key}"
-CONTRACTS_DIR="${CONTRACTS_DIR:-$ROOT/../curio/docker/data/contracts}"
+CONTRACTS_DIR="${CONTRACTS_DIR:-$ROOT/extern/curio/docker/data/contracts}"
 RPC="${RPC:-http://127.0.0.1:1234/rpc/v1}"
 LOTUS_CONTAINER="${LOTUS_CONTAINER:-lotus}"
 FIL_AMOUNT="${FIL_AMOUNT:-100}"

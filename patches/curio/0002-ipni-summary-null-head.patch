@@ -1,0 +1,26 @@
+diff --git a/web/api/webrpc/ipni.go b/web/api/webrpc/ipni.go
+index a101ee13..5a6c9517 100644
+--- a/web/api/webrpc/ipni.go
++++ b/web/api/webrpc/ipni.go
+@@ -242,10 +242,11 @@ type ParsedResponse struct {
+ func (a *WebRPC) IPNISummary(ctx context.Context) ([]*IPNI, error) {
+ 	var summary []*IPNI
+ 
++	// COALESCE: PDP peers can exist in ipni_peerid before any ad head is written.
+ 	err := a.deps.DB.Select(ctx, &summary, `SELECT 
+ 												ipp.sp_id,
+ 												ipp.peer_id,
+-												ih.head
++												COALESCE(ih.head, '') AS head
+ 												FROM ipni_peerid ipp
+ 												LEFT JOIN ipni_head ih ON ipp.peer_id = ih.provider`)
+ 	if err != nil {
+@@ -323,7 +324,7 @@ func (a *WebRPC) IPNISummary(ctx context.Context) ([]*IPNI, error) {
+ 				Address:               strings.Join(parsed.AddrInfo.Addrs, ","),
+ 				PublisherAddress:      strings.Join(parsed.Publisher.Addrs, ","),
+ 			}
+-			if parsed.LastAdvertisement.Slash != d.Head {
++			if d.Head != "" && parsed.LastAdvertisement.Slash != "" && parsed.LastAdvertisement.Slash != d.Head {
+ 				var diff int64
+ 				err := a.deps.DB.QueryRow(ctx, `WITH cte AS (
+ 															SELECT ad_cid, order_number

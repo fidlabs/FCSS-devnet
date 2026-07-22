@@ -3,7 +3,7 @@ set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-readonly CURIO_DOCKER_DIR="${CURIO_DOCKER_DIR:-${REPO_ROOT}/../curio/docker}"
+readonly CURIO_DOCKER_DIR="${CURIO_DOCKER_DIR:-${REPO_ROOT}/extern/curio/docker}"
 
 # Set or add a key in a TOML section.
 # Updates within the target section only; removes stale copies elsewhere.
