@@ -101,6 +101,106 @@ register_wallet_name() {
   ysql "INSERT INTO curio.wallet_names (wallet, name) VALUES ('${wallet}', '${name}') ON CONFLICT (wallet) DO UPDATE SET name = EXCLUDED.name"
 }
 
+# True once the steady-state Curio process is up.
+# First-boot entrypoint briefly runs a temporary `curio run` (no --name) for
+# storage attach / PDP, then kills it and starts `curio run --name devnet`.
+# Checking --help or wait-api alone can race that temporary process.
+curio_is_steady_state() {
+  docker compose exec -T curio sh -c '
+    for c in /proc/[0-9]*/cmdline; do
+      [ -r "$c" ] || continue
+      args=$(tr "\0" " " < "$c")
+      case "$args" in
+        *"curio run"*"--name devnet"*) exit 0 ;;
+      esac
+    done
+    exit 1
+  ' >/dev/null 2>&1
+}
+
+curio_container_running() {
+  docker compose ps --status running --services 2>/dev/null | grep -qx curio
+}
+
+curio_container_started_at() {
+  docker inspect -f '{{.State.StartedAt}}' curio 2>/dev/null || true
+}
+
+# Wait until Curio has finished first-boot init, the steady-state process is
+# running, wait-api + config stay healthy across container restarts, and
+# piece-server has written contracts/devnet-info.json (needs provider.ready).
+# Env overrides:
+#   CURIO_READY_TIMEOUT_S          overall timeout (default 1800)
+#   CURIO_READY_STABLE_CHECKS      consecutive successes required (default 4)
+#   CURIO_READY_POLL_INTERVAL_S    delay between polls (default 3)
+wait_for_curio_ready() {
+  local timeout_s="${CURIO_READY_TIMEOUT_S:-1800}"
+  local stable_needed="${CURIO_READY_STABLE_CHECKS:-4}"
+  local interval_s="${CURIO_READY_POLL_INTERVAL_S:-3}"
+  local deadline=$((SECONDS + timeout_s))
+  local marker="${CURIO_DOCKER_DIR}/data/curio/.init.curio"
+  local provider_ready="${CURIO_DOCKER_DIR}/data/curio/provider.ready"
+  local devnet_info="${CURIO_DOCKER_DIR}/data/contracts/devnet-info.json"
+  local stable=0
+  local last_started=""
+  local started machine reason
+
+  echo "Waiting for Curio steady-state API + devnet-info.json (timeout ${timeout_s}s, ${stable_needed} consecutive checks)..."
+
+  while (( SECONDS < deadline )); do
+    reason=""
+    if [[ ! -f "$marker" ]]; then
+      reason="waiting for first-boot marker $(basename "$marker")"
+    elif ! curio_container_running; then
+      reason="curio container not running (may be restarting)"
+    elif ! curio_is_steady_state; then
+      reason="waiting for steady-state process (curio run --name devnet)"
+    elif [[ ! -f "$provider_ready" ]]; then
+      reason="waiting for $(basename "$provider_ready") (Curio PDP provider bootstrap)"
+    elif [[ ! -f "$devnet_info" ]]; then
+      reason="waiting for contracts/$(basename "$devnet_info") (piece-server client bootstrap)"
+    else
+      started="$(curio_container_started_at)"
+      if [[ -z "$started" ]]; then
+        reason="unable to read curio StartedAt"
+      elif [[ -n "$last_started" && "$started" != "$last_started" ]]; then
+        reason="curio container restarted; resetting readiness"
+        stable=0
+        last_started="$started"
+      else
+        last_started="$started"
+        machine="$(curio_machine 2>/dev/null || true)"
+        if [[ -z "$machine" ]]; then
+          reason="waiting for curio machine address"
+        elif ! docker compose exec -T curio curio cli --machine "$machine" wait-api --timeout 5s >/dev/null 2>&1; then
+          reason="waiting for curio API on ${machine}"
+        elif ! docker compose exec -T curio curio config get base >/dev/null 2>&1; then
+          reason="waiting for curio config store"
+        else
+          stable=$((stable + 1))
+          echo "  ready check ${stable}/${stable_needed} (api ${machine}, devnet-info present)"
+          if (( stable >= stable_needed )); then
+            echo "Curio is ready (${devnet_info} present)."
+            return 0
+          fi
+          sleep "$interval_s"
+          continue
+        fi
+      fi
+    fi
+
+    stable=0
+    echo "  ${reason}..."
+    sleep "$interval_s"
+  done
+
+  echo "error: timed out waiting for Curio after ${timeout_s}s" >&2
+  echo "  marker=${marker} present=$([[ -f $marker ]] && echo yes || echo no)" >&2
+  echo "  provider.ready present=$([[ -f $provider_ready ]] && echo yes || echo no)" >&2
+  echo "  devnet-info present=$([[ -f $devnet_info ]] && echo yes || echo no)" >&2
+  return 1
+}
+
 restart_curio_node() {
   local machine
   machine="$(curio_machine)"
@@ -122,23 +222,16 @@ restart_curio_node() {
   echo "Restarting Curio container (recreate to pick up compose env)..."
   docker compose up -d --force-recreate curio
 
-  echo "Waiting for Curio API after restart..."
-  until docker compose exec -T curio curio cli --machine "$machine" wait-api --timeout 60s >/dev/null 2>&1; do
-    sleep 2
-  done
+  wait_for_curio_ready
 
   echo "Uncordoning Curio node..."
+  machine="$(curio_machine)"
   docker compose exec -T curio curio cli --machine "$machine" uncordon
   echo "Curio cluster node restarted."
 }
 
 cd "$CURIO_DOCKER_DIR"
-echo "Waiting for Curio to initialize..."
-# Wait for the database or Curio container to become interactive
-until docker compose exec -T curio curio config edit --help > /dev/null 2>&1; do
-  sleep 2
-done
-
+wait_for_curio_ready
 
 echo "Automating Curio Loopback IP allowance..."
 # Export current layer, update the flag, and re-import it
