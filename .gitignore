@@ -1,0 +1,13 @@
+# Editor / IDE
+.cursor/
+.vscode/
+
+# Private keys
+*.key
+
+# Local env and deal artifacts
+.env
+.env.bak.*
+.make-deal-last-id
+deal-*/
+logs/
