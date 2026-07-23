@@ -724,11 +724,6 @@ find_resumable_deal_for_manifest() {
   esac
 }
 
-persist_deal_id() {
-  local deal_id="$1"
-  printf '%s\n' "$deal_id" >"${REPO_ROOT}/.make-deal-last-id"
-}
-
 onboard_cars_present() {
   local deal_id="$1"
   local dir="$2"
@@ -920,7 +915,6 @@ else
   log "resuming with deal_id=${DEAL_ID}"
 fi
 
-persist_deal_id "$DEAL_ID"
 assert_deal_provider_is_curio "$DEAL_ID"
 
 state="$(cli_json_retry client get-deal "$DEAL_ID" | jq -r '.state')"

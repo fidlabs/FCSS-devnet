@@ -2,6 +2,8 @@
 
 Machinery to set up a **local Curio docker-devnet** capable of running **PoRep Market deals** and supporting **large paid retrievals**.
 
+The resulting stack is suitable for testing [`fidlabs/large-paid-retrievals`](https://github.com/fidlabs/large-paid-retrievals) (`sp-proxy` + `retrieval-client` over MPP / Filecoin Pay). See that project’s README for how to run retrievals against this devnet.
+
 Pinned submodule versions: **Curio v1.28.2**, **porep-market v1.2.0**, **filecoin-porep-market-tooling v1**.
 
 ## Dependencies
@@ -11,7 +13,7 @@ Pinned submodule versions: **Curio v1.28.2**, **porep-market v1.2.0**, **filecoi
 | [`curio`](extern/curio) (git submodule, **v1.28.2**) | Lotus + Curio docker stack |
 | [`porep-market`](extern/porep-market) (git submodule, **v1.2.0**) | PoRep Market / SPRegistry / Client contracts |
 | [`filecoin-porep-market-tooling`](extern/filecoin-porep-market-tooling) (git submodule, **v1**) | Client/SP CLI for propose → allocate → claim |
-| `large-paid-retrievals` | `sp-proxy` + `retrieval-client` (MPP / Filecoin Pay) |
+| [`large-paid-retrievals`](https://github.com/fidlabs/large-paid-retrievals) | `sp-proxy` + `retrieval-client` (MPP / Filecoin Pay); test against this devnet |
 | Singularity (local content provider) | Piece CARs / manifest for deals |
 
 `curio`, `porep-market`, and `filecoin-porep-market-tooling` are vendored under [`extern/`](extern/) as git submodules; the remaining dependencies will be brought in the same way.
@@ -44,7 +46,6 @@ Namespaced (same scripts):
 - `just curio init|up|cli|logs|down`
 - `just porep-market gen-env|deploy|up`
 - `just tooling init|make-deal`
-- `just retrieval keys|fund`
 
 ## Scripts
 
@@ -60,9 +61,6 @@ Shared helpers live in [`scripts/lib/`](scripts/lib/) (`common.sh`, `envfile.sh`
 | `scripts/porep-market/up.sh` | SP org + tooling `.env` + register miner + DataCap |
 | `scripts/tooling/init.sh` | Tooling patches + Python venv |
 | `scripts/tooling/make-deal.sh` | Propose → accept → allocate → onboard → claim → add-url |
-| `scripts/retrieval/keys.sh` | Copy CLIENT/SP keys from tooling `.env` for retrieval tooling |
-| `scripts/retrieval/fund.sh` | Fund retrieval wallets with FIL + USDFC after a chain reset |
-| `scripts/retrieval/env.sh` | `source` to export `PAYMENTS` / `USDFC` / `POREP_MARKET` / piece CID for sp-proxy |
 
 Also: [`contracts/allocator/NoOpMetaAllocator.{sol,json}`](contracts/allocator/) (MetaAllocator stub for local Client DataCap transfer).
 
@@ -71,7 +69,7 @@ Also: [`contracts/allocator/NoOpMetaAllocator.{sol,json}`](contracts/allocator/)
 1. `just init`
 2. `just up`
 3. Prepare pieces + serve Singularity (below), then `just make-deal`
-4. Paid retrievals: `just retrieval keys`, `just retrieval fund`, then `source ./scripts/retrieval/env.sh` and run `sp-proxy` / `retrieval-client`
+4. Optional: test paid retrievals with [`large-paid-retrievals`](https://github.com/fidlabs/large-paid-retrievals) — see that project’s README
 
 See each script’s header for flags and env overrides (`CURIO_DIR`, `POREP_MARKET_DIR`, `TOOLING_DIR`, `ENV_FILE`, `RPC_URL`, …).
 

@@ -23,9 +23,8 @@ _POREP_SCRIPTS_DIR="$(cd "${_POREP_LIB_DIR}/.." && pwd)"
 : "${CURIO_CLI:=${SCRIPTS_DIR}/curio/cli.sh}"
 
 # Prefer RPC_URL; accept legacy aliases.
-: "${RPC_URL:=${RPC:-${CURIO_RPC_URL:-${PAY_RPC_URL:-http://127.0.0.1:1234/rpc/v1}}}}"
+: "${RPC_URL:=${RPC:-${CURIO_RPC_URL:-http://127.0.0.1:1234/rpc/v1}}}}"
 : "${RPC:=${RPC_URL}}"
-: "${PAY_RPC_URL:=${RPC_URL}}"
 : "${CURIO_RPC_URL:=${RPC_URL}}"
 
 : "${LOTUS_CONTAINER:=lotus}"

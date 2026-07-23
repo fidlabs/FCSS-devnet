@@ -1,11 +1,10 @@
 # Curio PoRep devnet task runner
 # Run `just` to see all available commands.
-# Submodule tasks: just curio … / porep-market … / tooling … / retrieval …
+# Submodule tasks: just curio … / porep-market … / tooling …
 
 mod curio 'just/curio.just'
 mod porep-market 'just/porep-market.just'
 mod tooling 'just/tooling.just'
-mod retrieval 'just/retrieval.just'
 
 default:
     @just --list

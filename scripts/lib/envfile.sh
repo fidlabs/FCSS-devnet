@@ -45,11 +45,3 @@ set_env_key() {
     printf '%s=%s\n' "$key" "$value" >>"$file"
   fi
 }
-
-# Strip optional 0x; require 64 hex chars. Prints bare hex. Dies on invalid.
-normalize_hex_key() {
-  local raw="$1" hex
-  hex="$(printf '%s' "$raw" | tr -d ' \t\r\n' | sed 's/^0x//I')"
-  [[ "$hex" =~ ^[0-9a-fA-F]{64}$ ]] || die "expected 32-byte hex private key (got length ${#hex})"
-  printf '%s\n' "$hex"
-}

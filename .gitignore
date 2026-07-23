@@ -8,6 +8,5 @@
 # Local env and deal artifacts
 .env
 .env.bak.*
-.make-deal-last-id
 deal-*/
 logs/
