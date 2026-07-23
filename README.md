@@ -2,7 +2,7 @@
 
 Machinery to set up a **local Curio docker-devnet** capable of running **PoRep Market deals** and supporting **large paid retrievals**.
 
-Pinned submodule versions: **Curio v1.28.2**, **porep-market v1.2.0**.
+Pinned submodule versions: **Curio v1.28.2**, **porep-market v1.2.0**, **filecoin-porep-market-tooling v1**.
 
 ## Dependencies
 
@@ -10,11 +10,11 @@ Pinned submodule versions: **Curio v1.28.2**, **porep-market v1.2.0**.
 |------------|------|
 | [`curio`](extern/curio) (git submodule, **v1.28.2**) | Lotus + Curio docker stack |
 | [`porep-market`](extern/porep-market) (git submodule, **v1.2.0**) | PoRep Market / SPRegistry / Client contracts |
-| `filecoin-porep-market-tooling` | Client/SP CLI for propose → allocate → claim |
+| [`filecoin-porep-market-tooling`](extern/filecoin-porep-market-tooling) (git submodule, **v1**) | Client/SP CLI for propose → allocate → claim |
 | `large-paid-retrievals` | `sp-proxy` + `retrieval-client` (MPP / Filecoin Pay) |
 | Singularity (local content provider) | Piece CARs / manifest for deals |
 
-`curio` and `porep-market` are vendored under [`extern/`](extern/) as git submodules; the remaining dependencies will be brought in the same way.
+`curio`, `porep-market`, and `filecoin-porep-market-tooling` are vendored under [`extern/`](extern/) as git submodules; the remaining dependencies will be brought in the same way.
 
 Clone and initialize:
 
@@ -23,7 +23,7 @@ git clone <this-repo>
 ./scripts/setup-submodules.sh
 ```
 
-That runs `git submodule update --init --recursive`, resets `./extern/curio` to the pinned commit, applies [`patches/curio/`](patches/curio/) (compose `host.docker.internal`, IPNI null-head guard, Dockerfile/`make deps` submodule skips), prepares `extern/curio/docker/local-src` (filecoin-services + multicall3 for contracts-bootstrap), then runs `make docker/devnet`. Set `SKIP_DOCKER=1` to skip the image build.
+That runs `git submodule update --init --recursive`, resets Curio and tooling to their pinned commits, applies [`patches/curio/`](patches/curio/) and [`patches/filecoin-porep-market-tooling/`](patches/filecoin-porep-market-tooling/), prepares `extern/curio/docker/local-src` (filecoin-services + multicall3 for contracts-bootstrap), then runs `make docker/devnet`. Set `SKIP_DOCKER=1` to skip the image build.
 
 ## Scripts
 
@@ -31,7 +31,7 @@ All under [`scripts/`](scripts/):
 
 | Script | Purpose |
 |--------|---------|
-| `setup-submodules.sh` | Init submodules, apply `patches/curio/*`, prepare `docker/local-src`, run `make docker/devnet` |
+| `setup-submodules.sh` | Init submodules, apply `patches/{curio,filecoin-porep-market-tooling}/*`, prepare `docker/local-src`, run `make docker/devnet` |
 | `init-curio.sh` | Post-bootstrap Curio config (SSRF off, IPNI announce, disable WinningPoSt, miner control, escrow) |
 | `gen-devnet-env.sh` | Write `porep-market` `.env` from Curio contract bootstrap artifacts |
 | `setup-curio-devnet.sh` | Deploy (optional) + fund SP org + write tooling `.env` + register Curio miner + DataCap |
@@ -59,4 +59,4 @@ See each script’s header for flags and env overrides (`CURIO_DIR`, `POREP_MARK
 - Docker
 - `cast`, `jq`, `curl`; `just` + `forge` for contract deploy
 - `aria2c` for `make-deal.sh` onboard-data
-- Tooling Python venv available for the CLI (once `filecoin-porep-market-tooling` is present)
+- Tooling Python venv under `extern/filecoin-porep-market-tooling` (e.g. `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`)

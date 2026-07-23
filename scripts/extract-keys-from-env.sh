@@ -6,14 +6,14 @@
 #   ./scripts/extract-keys-from-env.sh
 #
 # Overrides:
-#   ENV_FILE     path to .env (default ../filecoin-porep-market-tooling/.env)
+#   ENV_FILE     path to .env (default ./extern/filecoin-porep-market-tooling/.env)
 #   CLIENT_KEY   output path (default ../large-paid-retrievals/client.key)
 #   SP_KEY       output path (default ../large-paid-retrievals/sp.key)
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ENV_FILE="${ENV_FILE:-$ROOT/../filecoin-porep-market-tooling/.env}"
+ENV_FILE="${ENV_FILE:-$ROOT/extern/filecoin-porep-market-tooling/.env}"
 CLIENT_KEY="${CLIENT_KEY:-$ROOT/../large-paid-retrievals/client.key}"
 SP_KEY="${SP_KEY:-$ROOT/../large-paid-retrievals/sp.key}"
 

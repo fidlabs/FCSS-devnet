@@ -30,7 +30,7 @@ set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-readonly TOOLING_DIR="${TOOLING_DIR:-${REPO_ROOT}/../filecoin-porep-market-tooling}"
+readonly TOOLING_DIR="${TOOLING_DIR:-${REPO_ROOT}/extern/filecoin-porep-market-tooling}"
 readonly ENV_FILE="${ENV_FILE:-${TOOLING_DIR}/.env}"
 
 if [[ -x "${TOOLING_DIR}/.venv/bin/python" ]]; then

@@ -1,0 +1,25 @@
+diff --git a/cli/commands/utils.py b/cli/commands/utils.py
+index 9521323..20238eb 100644
+--- a/cli/commands/utils.py
++++ b/cli/commands/utils.py
+@@ -1,6 +1,4 @@
+-import ipaddress
+ import json
+-import socket
+ from pathlib import Path
+ from urllib.parse import ParseResult
+ from urllib.parse import urlparse
+@@ -191,13 +189,6 @@ def validate_and_parse_url(manifest_url: str) -> ParseResult:
+     if parsed.scheme not in ("http", "https"):
+         raise click.ClickException("Manifest URL must use http/https")
+ 
+-    # noinspection PyTypeChecker
+-    ip = socket.gethostbyname(parsed.hostname)
+-    addr = ipaddress.ip_address(ip)
+-
+-    if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local or addr.is_multicast:
+-        raise click.ClickException(f"Manifest URL resolves to a disallowed IP address: {ip}")
+-
+     return parsed
+ 
+ 

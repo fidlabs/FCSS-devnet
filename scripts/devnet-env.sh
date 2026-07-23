@@ -10,7 +10,7 @@
 #
 # Overrides (set before sourcing):
 #   CONTRACTS_DIR   Curio contracts dir (default ./extern/curio/docker/data/contracts)
-#   POREP_ENV_FILE  market-tooling .env (default ../filecoin-porep-market-tooling/.env)
+#   POREP_ENV_FILE  market-tooling .env (default ./extern/filecoin-porep-market-tooling/.env)
 #   PAY_RPC_URL     Lotus FEVM RPC (default http://127.0.0.1:1234/rpc/v1)
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
@@ -20,7 +20,7 @@ fi
 
 _devnet_env_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 _devnet_contracts_dir="${CONTRACTS_DIR:-$_devnet_env_root/extern/curio/docker/data/contracts}"
-_devnet_porep_env="${POREP_ENV_FILE:-$_devnet_env_root/../filecoin-porep-market-tooling/.env}"
+_devnet_porep_env="${POREP_ENV_FILE:-$_devnet_env_root/extern/filecoin-porep-market-tooling/.env}"
 _devnet_contracts_json="$_devnet_contracts_dir/contract_addresses.json"
 
 _devnet_env_fail() {
