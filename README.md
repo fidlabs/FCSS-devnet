@@ -14,9 +14,8 @@ Pinned submodule versions: **Curio v1.28.2**, **porep-market v1.2.0**, **filecoi
 | [`porep-market`](extern/porep-market) (git submodule, **v1.2.0**) | PoRep Market / SPRegistry / Client contracts |
 | [`filecoin-porep-market-tooling`](extern/filecoin-porep-market-tooling) (git submodule, **v1**) | Client/SP CLI for propose → allocate → claim |
 | [`large-paid-retrievals`](https://github.com/fidlabs/large-paid-retrievals) | `sp-proxy` + `retrieval-client` (MPP / Filecoin Pay); test against this devnet |
-| Singularity (local content provider) | Piece CARs / manifest for deals |
 
-`curio`, `porep-market`, and `filecoin-porep-market-tooling` are vendored under [`extern/`](extern/) as git submodules; the remaining dependencies will be brought in the same way.
+`curio`, `porep-market`, and `filecoin-porep-market-tooling` are vendored under [`extern/`](extern/) as git submodules.
 
 ## Quick start
 
@@ -24,7 +23,7 @@ Pinned submodule versions: **Curio v1.28.2**, **porep-market v1.2.0**, **filecoi
 git clone <this-repo>
 just init    # submodules, patches, docker images, tooling venv
 just up      # compose up + Curio config + porep deploy + SP wiring
-# prepare + serve Singularity pieces/manifest (see below), then:
+# prepare + serve a deal manifest/pieces (e.g. Singularity — see below), then:
 just make-deal
 ```
 
@@ -68,12 +67,14 @@ Also: [`contracts/allocator/NoOpMetaAllocator.{sol,json}`](contracts/allocator/)
 
 1. `just init`
 2. `just up`
-3. Prepare pieces + serve Singularity (below), then `just make-deal`
+3. Prepare a deal dataset (e.g. with Singularity — below), then `just make-deal`
 4. Optional: test paid retrievals with [`large-paid-retrievals`](https://github.com/fidlabs/large-paid-retrievals) — see that project’s README
 
 See each script’s header for flags and env overrides (`CURIO_DIR`, `POREP_MARKET_DIR`, `TOOLING_DIR`, `ENV_FILE`, `RPC_URL`, …).
 
 ## Singularity: prepare pieces and serve the manifest
+
+[Singularity](https://github.com/data-preservation-programs/singularity) is an **independent** project (not a submodule of this repo). The steps below are one example of how a user might prepare a dataset and serve piece CARs + a deal `manifest.json` for `just make-deal`. Any other tooling that produces a compatible manifest and HTTP piece URLs works the same way.
 
 [`just make-deal`](scripts/tooling/make-deal.sh) needs two HTTP services on the **host**:
 
