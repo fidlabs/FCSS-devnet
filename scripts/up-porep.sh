@@ -17,24 +17,23 @@
 # Optional for --deploy: just + forge in the porep-market checkout
 #
 # Usage:
-#   ./scripts/setup-curio-devnet.sh
-#   ./scripts/setup-curio-devnet.sh --deploy
-#   ./scripts/setup-curio-devnet.sh --from-env
-#   CURIO_DIR=./extern/curio POREP_MARKET_DIR=./extern/porep-market ./scripts/setup-curio-devnet.sh
+#   ./scripts/up-porep.sh
+#   ./scripts/up-porep.sh --deploy
+#   ./scripts/up-porep.sh --from-env
+#   just up
 
 set -euo pipefail
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-readonly NOOP_META_ALLOCATOR_ARTIFACT="${SCRIPT_DIR}/NoOpMetaAllocator.json"
-readonly TOOLING_DIR="${TOOLING_DIR:-${REPO_ROOT}/extern/filecoin-porep-market-tooling}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=lib/envfile.sh
+source "${SCRIPT_DIR}/lib/envfile.sh"
+# shellcheck source=lib/lotus.sh
+source "${SCRIPT_DIR}/lib/lotus.sh"
 
-CURIO_DIR="${CURIO_DIR:-${REPO_ROOT}/extern/curio}"
-POREP_MARKET_DIR="${POREP_MARKET_DIR:-${REPO_ROOT}/extern/porep-market}"
-RPC_URL="${RPC_URL:-http://127.0.0.1:1234/rpc/v1}"
-LOTUS_CONTAINER="${LOTUS_CONTAINER:-lotus}"
-LOTUS_MINER_CONTAINER="${LOTUS_MINER_CONTAINER:-lotus-miner}"
-CURIO_CONTAINER="${CURIO_CONTAINER:-curio}"
+readonly NOOP_META_ALLOCATOR_ARTIFACT="${REPO_ROOT}/contracts/allocator/NoOpMetaAllocator.json"
+
 ORG_FUND_AMOUNT="${ORG_FUND_AMOUNT:-100}"
 AVAILABLE_BYTES="${AVAILABLE_BYTES:-10995116277760}" # 10 TiB
 DATACAP_GRANT_BYTES="${DATACAP_GRANT_BYTES:-1000000000}" # 1 GiB, same as Curio mk12 bootstrap
@@ -59,9 +58,9 @@ Options:
   -h, --help        Show this help
 
 Environment:
-  CURIO_DIR              Path to curio checkout (default: ./extern/curio submodule)
+  CURIO_DIR              Path to curio checkout (default: ./extern/curio)
   POREP_MARKET_DIR       Path to porep-market checkout (default: ./extern/porep-market)
-  TOOLING_DIR            Path to filecoin-porep-market-tooling (default: ./extern/filecoin-porep-market-tooling)
+  TOOLING_DIR            Path to tooling (default: ./extern/filecoin-porep-market-tooling)
   RPC_URL                Lotus FEVM RPC (default: http://127.0.0.1:1234/rpc/v1)
   LOTUS_CONTAINER        Docker container name (default: lotus)
   LOTUS_MINER_CONTAINER  Docker container name (default: lotus-miner)
@@ -72,59 +71,6 @@ Environment:
   REGISTER_LOTUS_MINER   Register lotus-miner in SPRegistry (default: false)
   ENV_FILE               Output .env path (default: <tooling>/.env)
 EOF
-}
-
-log() { printf '==> %s\n' "$*"; }
-die() { printf 'error: %s\n' "$*" >&2; exit 1; }
-
-require_cmd() {
-  command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
-}
-
-require_file() {
-  [[ -f "$1" ]] || die "missing required file: $1"
-}
-
-require_container() {
-  docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null | grep -qx true \
-    || die "docker container '$1' is not running"
-}
-
-lotus() {
-  docker exec "$LOTUS_CONTAINER" lotus "$@"
-}
-
-wait_msg() {
-  # Wait for a message to land. Retries transient Lotus tipset/fork errors
-  # ("refusing explicit call due to state fork at epoch"), common right after
-  # chain reset or while multiple miner messages are in flight.
-  # Returns 0 on success, 1 on timeout (does not exit).
-  local cid="$1"
-  local attempts="${2:-40}"
-  local i out rc
-  [[ -n "$cid" ]] || die "empty message cid"
-  log "waiting for message ${cid}"
-  for i in $(seq 1 "$attempts"); do
-    set +e
-    out="$(lotus state wait-msg "$cid" 2>&1)"
-    rc=$?
-    set -e
-    if [[ $rc -eq 0 ]]; then
-      return 0
-    fi
-    if printf '%s\n' "$out" | grep -qiE 'state fork|refusing explicit call'; then
-      log "transient lotus tipset/fork error (${i}/${attempts}); retrying"
-      sleep 3
-      continue
-    fi
-    die "waiting for message ${cid} failed: ${out}"
-  done
-  log "timed out waiting for message ${cid} after ${attempts} attempts"
-  return 1
-}
-
-wait_msg_required() {
-  wait_msg "$@" || die "required message did not land: $1"
 }
 
 extract_msg_cid() {
@@ -216,14 +162,6 @@ miner_post_key() {
   printf '%s\n' "$key"
 }
 
-env_get() {
-  local key="$1"
-  local line
-  line="$(grep -E "^${key}=" "$ENV_FILE" | tail -n1 || true)"
-  [[ -n "$line" ]] || return 1
-  printf '%s\n' "${line#*=}"
-}
-
 eth_to_filecoin() {
   local eth="$1"
   curl -sf -m 10 -X POST "$RPC_URL" \
@@ -283,22 +221,6 @@ deploy_noop_meta_allocator() {
   printf '%s\n' "$deployed"
 }
 
-set_env_key() {
-  local file="$1"
-  local key="$2"
-  local value="$3"
-  case "$value" in
-    *$'\n'*|*$'\r'*) die "refusing to write ${key}: value contains a newline" ;;
-  esac
-  if grep -qE "^${key}=" "$file"; then
-    # macOS/BSD sed needs -i ''
-    sed -i.bak "s|^${key}=.*|${key}=${value}|" "$file"
-    rm -f "${file}.bak"
-  else
-    printf '%s=%s\n' "$key" "$value" >>"$file"
-  fi
-}
-
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --deploy) DO_DEPLOY=true; shift ;;
@@ -337,10 +259,10 @@ if [[ "$DO_DEPLOY" == true ]]; then
   ADMIN_PRIVATE_KEY="$(tr -d '[:space:]' < "$DEPLOYER_KEY_FILE")"
   [[ "$ADMIN_PRIVATE_KEY" =~ ^0x[0-9a-fA-F]{64}$ ]] || die "invalid deployer private key in ${DEPLOYER_KEY_FILE}"
 
-  POREP_MARKET_DIR="$POREP_MARKET_DIR" "${SCRIPT_DIR}/gen-devnet-env.sh" --out "${POREP_MARKET_DIR}/.env"
+  POREP_MARKET_DIR="$POREP_MARKET_DIR" "${SCRIPT_DIR}/gen-porep-env.sh" --out "${POREP_MARKET_DIR}/.env"
   require_file "${POREP_MARKET_DIR}/.env"
 
-  # gen-devnet-env defaults META_ALLOCATOR to the deployer EOA (no code). Client.transfer
+  # gen-porep-env defaults META_ALLOCATOR to the deployer EOA (no code). Client.transfer
   # calls addVerifiedClient on that address and reverts on FEVM. Point it at a NoOp contract.
   META_ALLOCATOR="$(deploy_noop_meta_allocator "$ADMIN_PRIVATE_KEY" | tr -d '[:space:]')"
   [[ "$META_ALLOCATOR" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "invalid META_ALLOCATOR from deploy: '${META_ALLOCATOR}'"
@@ -442,7 +364,7 @@ ARIA2C_PATH=
 
 # Needed for sp claim-allocations curio command.
 # Default: docker wrapper (Curio runs in container on this setup).
-CURIO_PATH=${SCRIPT_DIR}/curio-docker.sh
+CURIO_PATH=${SCRIPT_DIR}/curio-cli.sh
 
 # Needed for sp claim-allocations boost command, path for boostd binary, leave empty to use PATH lookup
 BOOSTD_PATH=
@@ -467,7 +389,7 @@ ADMIN_PRIVATE_KEY=${ADMIN_PRIVATE_KEY}
 ADMIN_LOTUS_WALLET=
 ADMIN_LOTUS_TOKEN=
 
-# Fresh SP organization created by scripts/setup-curio-devnet.sh
+# Fresh SP organization created by scripts/up-porep.sh
 # Native Lotus address: ${ORG_T410}
 SP_PRIVATE_KEY=${ORG_PRIVATE_KEY}
 SP_LOTUS_WALLET=

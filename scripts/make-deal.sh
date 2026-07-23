@@ -7,17 +7,18 @@
 # sealing are left to Curio; poll with `sp get-claims` / `--wait-claims` if needed.
 #
 # Prerequisites:
-#   - scripts/setup-curio-devnet.sh completed (Curio SP registered, control addr, DataCap, MetaAllocator)
+#   - scripts/up-porep.sh completed (Curio SP registered, control addr, DataCap, MetaAllocator)
 #   - lotus-miner should NOT be the matched provider (setup skips/pauses it; make-deal re-checks)
 #   - Singularity pieces prepared; manifest JSON reachable on MANIFEST_URL
 #   - .env configured (CLIENT_*, SP_*, POREP_MARKET, FILECOIN_PAY, USDC_TOKEN)
 #   - aria2c on PATH (or ARIA2C_PATH) for sp onboard-data
-#   - CURIO_PATH pointing at scripts/curio-docker.sh (or a local curio binary) for claim
+#   - CURIO_PATH pointing at scripts/curio-cli.sh (or a local curio binary) for claim
 #
 # Compatible with macOS /bin/bash 3.2 (no mapfile).
 #
 # Usage:
 #   ./scripts/make-deal.sh
+#   just make-deal
 #   ./scripts/make-deal.sh --manifest-url http://127.0.0.1:8080/manifest.json
 #   ./scripts/make-deal.sh --deal-id 1          # resume incomplete deal
 #   ./scripts/make-deal.sh --wait-claims        # also poll until on-chain claims finish
@@ -28,10 +29,13 @@
 
 set -euo pipefail
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-readonly TOOLING_DIR="${TOOLING_DIR:-${REPO_ROOT}/extern/filecoin-porep-market-tooling}"
-readonly ENV_FILE="${ENV_FILE:-${TOOLING_DIR}/.env}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=lib/envfile.sh
+source "${SCRIPT_DIR}/lib/envfile.sh"
+
+ENV_FILE="${ENV_FILE:-${TOOLING_DIR}/.env}"
 
 if [[ -x "${TOOLING_DIR}/.venv/bin/python" ]]; then
   PYTHON="${TOOLING_DIR}/.venv/bin/python"
@@ -85,32 +89,6 @@ Environment overrides match the option names (MANIFEST_URL, PIECE_BASE_URL, WAIT
 EOF
 }
 
-log() { printf '==> %s\n' "$*" >&2; }
-die() { printf 'error: %s\n' "$*" >&2; exit 1; }
-
-require_cmd() {
-  command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
-}
-
-env_get() {
-  local key="$1"
-  local line
-  line="$(grep -E "^${key}=" "$ENV_FILE" | tail -n1 || true)"
-  [[ -n "$line" ]] || return 1
-  printf '%s\n' "${line#*=}"
-}
-
-set_env_key() {
-  local key="$1"
-  local value="$2"
-  if grep -qE "^${key}=" "$ENV_FILE"; then
-    sed -i.bak "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
-    rm -f "${ENV_FILE}.bak"
-  else
-    printf '%s=%s\n' "$key" "$value" >>"$ENV_FILE"
-  fi
-}
-
 resolve_aria2c() {
   local path
   path="$(env_get ARIA2C_PATH 2>/dev/null || true)"
@@ -140,7 +118,7 @@ ensure_aria2c() {
 
 ensure_curio() {
   local path wrapper
-  wrapper="${SCRIPT_DIR}/curio-docker.sh"
+  wrapper="${SCRIPT_DIR}/curio-cli.sh"
   path="$(env_get CURIO_PATH 2>/dev/null || true)"
   if [[ -z "$path" || ! -x "$path" ]]; then
     if [[ -x "$wrapper" ]]; then
@@ -148,7 +126,7 @@ ensure_curio() {
     elif command -v curio >/dev/null 2>&1; then
       path="$(command -v curio)"
     else
-      die "curio not found (needed for claim-allocations). Set CURIO_PATH or use scripts/curio-docker.sh"
+      die "curio not found (needed for claim-allocations). Set CURIO_PATH or use scripts/curio-cli.sh"
     fi
     set_env_key CURIO_PATH "$path"
   fi
@@ -309,7 +287,7 @@ attach_curio_piece_urls() {
     printf '  %s\n' "$line" >&2
   done <"$tmp"
 
-  # Use FD 3 for the alloc list — curio-docker.sh / docker compose exec inherit
+  # Use FD 3 for the alloc list — curio-cli.sh / docker compose exec inherit
   # stdin and would otherwise consume remaining lines after the first add-url.
   while IFS=$'\t' read -r alloc_id piece_cid <&3 || [[ -n "$alloc_id" ]]; do
     alloc_id="$(printf '%s' "$alloc_id" | tr -d '[:space:]')"

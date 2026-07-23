@@ -1,6 +1,6 @@
 # filecoin-porep-market-tooling patches
 
-Unified diffs applied by [`scripts/setup-submodules.sh`](../../scripts/setup-submodules.sh) onto the pinned [`extern/filecoin-porep-market-tooling`](../../extern/filecoin-porep-market-tooling) submodule (**v1**) after `git submodule update`.
+Unified diffs applied by [`scripts/init.sh`](../../scripts/init.sh) onto the pinned [`extern/filecoin-porep-market-tooling`](../../extern/filecoin-porep-market-tooling) submodule (**v1**) after `git submodule update`.
 
 | Patch | Purpose |
 |-------|---------|

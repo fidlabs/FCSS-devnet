@@ -1,0 +1,41 @@
+diff --git a/scripts/makefiles/30-build.mk b/scripts/makefiles/30-build.mk
+index 83f2fdf1..3387292f 100644
+--- a/scripts/makefiles/30-build.mk
++++ b/scripts/makefiles/30-build.mk
+@@ -2,6 +2,9 @@
+ 
+ ## ldflags -s -w strips binary
+ 
++# porep-curio-devnet: nested submodule .git is invalid inside docker build images.
++GIT_DESCRIBE := $(shell git log -1 --format=%h_%cI 2>/dev/null || echo unknown)
++
+ ifeq ($(UNAME_S),Linux)
+ curio: CGO_LDFLAGS_ALLOW='.*'
+ endif
+@@ -12,7 +15,7 @@ curio: $(BUILD_DEPS)
+ 	-tags "$(CURIO_TAGS)" \
+ 	-o curio -ldflags " -s -w \
+ 	-X github.com/filecoin-project/curio/build.IsOpencl=$(FFI_USE_OPENCL) \
+-	-X github.com/filecoin-project/curio/build.CurrentCommit=+git_`git log -1 --format=%h_%cI`" \
++	-X github.com/filecoin-project/curio/build.CurrentCommit=+git_$(GIT_DESCRIBE)" \
+ 	./cmd/curio
+ .PHONY: curio
+ BINS += curio
+@@ -29,7 +32,7 @@ curio-native: $(BUILD_DEPS)
+ 			-tags "$(CURIO_TAGS)" \
+ 			-o curio -ldflags " -s -w \
+ 			-X github.com/filecoin-project/curio/build.IsOpencl=$(FFI_USE_OPENCL) \
+-			-X github.com/filecoin-project/curio/build.CurrentCommit=+git_`git log -1 --format=%h_%cI`" \
++			-X github.com/filecoin-project/curio/build.CurrentCommit=+git_$(GIT_DESCRIBE)" \
+ 			./cmd/curio ; \
+ 	else \
+ 		echo "Building curio-native (non-amd64; GOAMD64 not applicable)"; \
+@@ -37,7 +40,7 @@ curio-native: $(BUILD_DEPS)
+ 			-tags "$(CURIO_TAGS)" \
+ 			-o curio -ldflags " -s -w \
+ 			-X github.com/filecoin-project/curio/build.IsOpencl=$(FFI_USE_OPENCL) \
+-			-X github.com/filecoin-project/curio/build.CurrentCommit=+git_`git log -1 --format=%h_%cI`" \
++			-X github.com/filecoin-project/curio/build.CurrentCommit=+git_$(GIT_DESCRIBE)" \
+ 			./cmd/curio ; \
+ 	fi
+ .PHONY: curio-native

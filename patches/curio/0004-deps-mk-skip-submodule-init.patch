@@ -9,7 +9,7 @@ index 7d9d65d0..008fe72d 100644
 -	git submodule update --init --recursive
 +	# porep-curio-devnet: skip in-image git submodule update
 +	# Nested Curio-as-submodule .git gitdirs are invalid inside the build image.
-+	# Submodules are initialized on the host by scripts/setup-submodules.sh.
++	# Submodules are initialized on the host by scripts/init.sh.
 +	@test -d extern/filecoin-ffi
  	touch $@
  

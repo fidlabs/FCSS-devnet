@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
+# Post-bootstrap Curio config for local PoRep deals: SSRF off, IPNI announce,
+# disable WinningPoSt, miner control, escrow funding.
+#
+# Usage (from repo root):
+#   ./scripts/up-curio.sh
+#   just up   # runs this after compose up
+#
 set -euo pipefail
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-readonly CURIO_DOCKER_DIR="${CURIO_DOCKER_DIR:-${REPO_ROOT}/extern/curio/docker}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
 
 # Set or add a key in a TOML section.
 # Updates within the target section only; removes stale copies elsewhere.

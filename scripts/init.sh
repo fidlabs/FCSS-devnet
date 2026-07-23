@@ -5,38 +5,27 @@
 # When Curio is itself a submodule, `.git` is a gitdir pointer into the
 # superproject. Inside the image that path does not exist, so any
 # `git submodule update` during `docker/devnet` fails. Working-tree fixes
-# (compose host.docker.internal, IPNI null-head, Dockerfile/deps skips)
-# live in patches/curio/ and are applied here after a clean Curio checkout.
-#
-# Tooling patches (allow private/loopback manifest URLs for local deals)
-# live in patches/filecoin-porep-market-tooling/.
-#
-# Also clones Curio docker/local-src/{filecoin-services,multicall3} as documented
-# in extern/curio/docker/local-src/README.md (CONTRACT_SOURCE_MODE=local).
+# live in patches/curio/ and patches/filecoin-porep-market-tooling/.
 #
 # Usage (from repo root):
-#   ./scripts/setup-submodules.sh
+#   ./scripts/init.sh
+#   just init
 #
 # Env:
-#   CURIO_DIR     Path to curio submodule (default: ./extern/curio)
-#   TOOLING_DIR   Path to tooling submodule (default: ./extern/filecoin-porep-market-tooling)
-#   SKIP_DOCKER   If set to 1, skip `make docker/devnet`
+#   CURIO_DIR / TOOLING_DIR / SKIP_DOCKER=1
 #
-# Idempotent: resets Curio/tooling to pinned submodule commits, re-applies
-# patches, ensures local-src checkouts, then rebuilds images unless SKIP_DOCKER=1.
+# Idempotent: resets Curio/tooling to pinned commits, re-applies patches,
+# ensures local-src checkouts, then rebuilds images unless SKIP_DOCKER=1.
 
 set -euo pipefail
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-readonly CURIO_DIR="${CURIO_DIR:-${REPO_ROOT}/extern/curio}"
-readonly TOOLING_DIR="${TOOLING_DIR:-${REPO_ROOT}/extern/filecoin-porep-market-tooling}"
-readonly CURIO_PATCH_DIR="${CURIO_PATCH_DIR:-${REPO_ROOT}/patches/curio}"
-readonly TOOLING_PATCH_DIR="${TOOLING_PATCH_DIR:-${REPO_ROOT}/patches/filecoin-porep-market-tooling}"
-readonly SKIP_DOCKER="${SKIP_DOCKER:-0}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
 
-log() { printf '==> %s\n' "$*"; }
-die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+CURIO_PATCH_DIR="${CURIO_PATCH_DIR:-${REPO_ROOT}/patches/curio}"
+TOOLING_PATCH_DIR="${TOOLING_PATCH_DIR:-${REPO_ROOT}/patches/filecoin-porep-market-tooling}"
+SKIP_DOCKER="${SKIP_DOCKER:-0}"
 
 # Reset a submodule working tree to the gitlink commit and apply *.patch files.
 apply_patches() {
@@ -112,7 +101,6 @@ apply_patches "$TOOLING_DIR" "$TOOLING_PATCH_DIR" "filecoin-porep-market-tooling
 
 prepare_curio_local_src
 
-# Sanity: nested sources needed by the Curio image build must exist on the host.
 [[ -d "${CURIO_DIR}/extern/filecoin-ffi" ]] \
   || die "curio/extern/filecoin-ffi missing after submodule update"
 
@@ -124,8 +112,8 @@ if [[ "$SKIP_DOCKER" == "1" ]]; then
   exit 0
 fi
 
-command -v make >/dev/null 2>&1 || die "missing required command: make"
-command -v docker >/dev/null 2>&1 || die "missing required command: docker"
+require_cmd make
+require_cmd docker
 
 log "make docker/devnet (in ${CURIO_DIR#"$REPO_ROOT"/})"
 make -C "$CURIO_DIR" docker/devnet

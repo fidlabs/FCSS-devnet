@@ -5,7 +5,7 @@ default:
     @just --list
 
 init:
-    @./scripts/setup-submodules.sh
+    @./scripts/init.sh
     @just _tooling-venv
 
 [private]
@@ -25,11 +25,11 @@ _tooling-venv:
 _curio-up:
     make -C extern/curio devnet/up
     @echo 'Devnet started. Run `just logs` to follow container logs.'
-    @./scripts/init-curio.sh
+    @./scripts/up-curio.sh
 
 [private]
 _porep-deploy:
-    @./scripts/setup-curio-devnet.sh --deploy
+    @./scripts/up-porep.sh --deploy
 
 up: _curio-up _porep-deploy
 
