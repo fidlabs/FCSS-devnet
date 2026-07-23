@@ -7,33 +7,33 @@
 # sealing are left to Curio; poll with `sp get-claims` / `--wait-claims` if needed.
 #
 # Prerequisites:
-#   - scripts/up-porep.sh completed (Curio SP registered, control addr, DataCap, MetaAllocator)
+#   - scripts/porep-market/up.sh completed (Curio SP registered, control addr, DataCap, MetaAllocator)
 #   - lotus-miner should NOT be the matched provider (setup skips/pauses it; make-deal re-checks)
 #   - Singularity pieces prepared; manifest JSON reachable on MANIFEST_URL
 #   - .env configured (CLIENT_*, SP_*, POREP_MARKET, FILECOIN_PAY, USDC_TOKEN)
 #   - aria2c on PATH (or ARIA2C_PATH) for sp onboard-data
-#   - CURIO_PATH pointing at scripts/curio-cli.sh (or a local curio binary) for claim
+#   - CURIO_PATH pointing at scripts/curio/cli.sh (or a local curio binary) for claim
 #
 # Compatible with macOS /bin/bash 3.2 (no mapfile).
 #
 # Usage:
-#   ./scripts/make-deal.sh
+#   ./scripts/tooling/make-deal.sh
 #   just make-deal
-#   ./scripts/make-deal.sh --manifest-url http://127.0.0.1:8080/manifest.json
-#   ./scripts/make-deal.sh --deal-id 1          # resume incomplete deal
-#   ./scripts/make-deal.sh --wait-claims        # also poll until on-chain claims finish
-#   ./scripts/make-deal.sh --skip-onboard       # stop after make-allocations
-#   ./scripts/make-deal.sh --skip-claim         # onboard cars but do not claim into Curio
+#   ./scripts/tooling/make-deal.sh --manifest-url http://127.0.0.1:8080/manifest.json
+#   ./scripts/tooling/make-deal.sh --deal-id 1          # resume incomplete deal
+#   ./scripts/tooling/make-deal.sh --wait-claims        # also poll until on-chain claims finish
+#   ./scripts/tooling/make-deal.sh --skip-onboard       # stop after make-allocations
+#   ./scripts/tooling/make-deal.sh --skip-claim         # onboard cars but do not claim into Curio
 #
 # Without --deal-id, resumes an incomplete deal for MANIFEST_URL if present; otherwise proposes.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "${SCRIPT_DIR}/lib/common.sh"
-# shellcheck source=lib/envfile.sh
-source "${SCRIPT_DIR}/lib/envfile.sh"
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIR}/../lib/common.sh"
+# shellcheck source=../lib/envfile.sh
+source "${SCRIPT_DIR}/../lib/envfile.sh"
 
 ENV_FILE="${ENV_FILE:-${TOOLING_DIR}/.env}"
 
@@ -118,7 +118,7 @@ ensure_aria2c() {
 
 ensure_curio() {
   local path wrapper
-  wrapper="${SCRIPT_DIR}/curio-cli.sh"
+  wrapper="${CURIO_CLI}"
   path="$(env_get CURIO_PATH 2>/dev/null || true)"
   if [[ -z "$path" || ! -x "$path" ]]; then
     if [[ -x "$wrapper" ]]; then
@@ -126,7 +126,7 @@ ensure_curio() {
     elif command -v curio >/dev/null 2>&1; then
       path="$(command -v curio)"
     else
-      die "curio not found (needed for claim-allocations). Set CURIO_PATH or use scripts/curio-cli.sh"
+      die "curio not found (needed for claim-allocations). Set CURIO_PATH or use scripts/curio/cli.sh"
     fi
     set_env_key CURIO_PATH "$path"
   fi
@@ -287,7 +287,7 @@ attach_curio_piece_urls() {
     printf '  %s\n' "$line" >&2
   done <"$tmp"
 
-  # Use FD 3 for the alloc list — curio-cli.sh / docker compose exec inherit
+  # Use FD 3 for the alloc list — curio/cli.sh / docker compose exec inherit
   # stdin and would otherwise consume remaining lines after the first add-url.
   while IFS=$'\t' read -r alloc_id piece_cid <&3 || [[ -n "$alloc_id" ]]; do
     alloc_id="$(printf '%s' "$alloc_id" | tr -d '[:space:]')"
@@ -803,7 +803,7 @@ wait_until_all_claimed() {
 
   claims="$(deal_claim_count "$deal_id")"
   unclaimed="$(deal_allocation_count "$deal_id")"
-  die "timed out waiting for claims on deal ${deal_id}: claims=${claims}/${expected} unclaimed=${unclaimed}. Re-run: ./scripts/make-deal.sh --deal-id ${deal_id}"
+  die "timed out waiting for claims on deal ${deal_id}: claims=${claims}/${expected} unclaimed=${unclaimed}. Re-run: ./scripts/tooling/make-deal.sh --deal-id ${deal_id}"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -1013,6 +1013,6 @@ if [[ "$WAIT_CLAIMS" == true ]]; then
 else
   log "all unclaimed allocations have Curio piece URLs — not waiting for on-chain claims"
   log "poll later: ${CLI[*]} sp get-claims ${DEAL_ID}"
-  log "or re-run: ./scripts/make-deal.sh --deal-id ${DEAL_ID} --wait-claims"
+  log "or re-run: ./scripts/tooling/make-deal.sh --deal-id ${DEAL_ID} --wait-claims"
   log "done. deal_id=${DEAL_ID} state=COMPLETED unclaimed=${ALLOC_COUNT} claims=${CLAIM_COUNT} onboard_dir=${ONBOARD_DIR}"
 fi

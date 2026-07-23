@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 /// @dev Local-dev stub for porep-market Client.transfer().
-/// Curio/devnet gen-porep-env defaults META_ALLOCATOR to the deployer EOA, which
+/// Curio/devnet gen-env defaults META_ALLOCATOR to the deployer EOA, which
 /// has no code and causes FEVM transfers to revert. This no-op implements the
 /// IMetaAllocator.addVerifiedClient surface so allocations can proceed when the
 /// Client contract already holds DataCap (granted via lotus filplus).

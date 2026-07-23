@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Wire filecoin-porep-market-tooling to a local Curio docker devnet:
-#   1. (optional) deploy porep-market contracts (with a NoOp MetaAllocator)
-#   2. create a funded SP organization wallet
-#   3. write .env from Curio + porep-market deployment artifacts
-#   4. register local miners under that org (new SPRegistry ABI via cast)
-#   5. add the org wallet as an *additional* miner control address (keep BLS worker as post)
-#   6. grant DataCap to the Client contract (needed for make-allocations)
+#   1. create a funded SP organization wallet
+#   2. write .env from Curio + porep-market deployment artifacts
+#   3. register local miners under that org (new SPRegistry ABI via cast)
+#   4. add the org wallet as an *additional* miner control address (keep BLS worker as post)
+#   5. grant DataCap to the Client contract (needed for make-allocations)
+#
+# Deploy contracts first with: ./scripts/porep-market/deploy.sh (or just porep-market deploy)
 #
 # IMPORTANT: never replace WindowPoSt (post) with the eth/f410 org wallet. Eth accounts
 # cannot sign native SubmitWindowedPoSt; on a single-miner 2k net that faults the only
@@ -13,33 +14,30 @@
 #
 # Compatible with macOS /bin/bash 3.2 (no mapfile).
 #
-# Prerequisites: docker (lotus, lotus-miner, curio up), cast, jq
-# Optional for --deploy: just + forge in the porep-market checkout
+# Prerequisites: docker (lotus, lotus-miner, curio up), cast, jq;
+#   porep-market deployments/devnet/latest.json from deploy.sh
 #
 # Usage:
-#   ./scripts/up-porep.sh
-#   ./scripts/up-porep.sh --deploy
-#   ./scripts/up-porep.sh --from-env
+#   ./scripts/porep-market/up.sh
+#   ./scripts/porep-market/up.sh --from-env
+#   just porep-market up
 #   just up
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "${SCRIPT_DIR}/lib/common.sh"
-# shellcheck source=lib/envfile.sh
-source "${SCRIPT_DIR}/lib/envfile.sh"
-# shellcheck source=lib/lotus.sh
-source "${SCRIPT_DIR}/lib/lotus.sh"
-
-readonly NOOP_META_ALLOCATOR_ARTIFACT="${REPO_ROOT}/contracts/allocator/NoOpMetaAllocator.json"
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIR}/../lib/common.sh"
+# shellcheck source=../lib/envfile.sh
+source "${SCRIPT_DIR}/../lib/envfile.sh"
+# shellcheck source=../lib/lotus.sh
+source "${SCRIPT_DIR}/../lib/lotus.sh"
 
 ORG_FUND_AMOUNT="${ORG_FUND_AMOUNT:-100}"
 AVAILABLE_BYTES="${AVAILABLE_BYTES:-10995116277760}" # 10 TiB
 DATACAP_GRANT_BYTES="${DATACAP_GRANT_BYTES:-1000000000}" # 1 GiB, same as Curio mk12 bootstrap
 ENV_FILE="${ENV_FILE:-${TOOLING_DIR}/.env}"
 
-DO_DEPLOY=false
 SKIP_REGISTER=false
 SKIP_CONTROL=false
 SKIP_DATACAP=false
@@ -50,12 +48,13 @@ usage() {
 Usage: $(basename "$0") [options]
 
 Options:
-  --deploy          Deploy NoOp MetaAllocator, then 'just devnet_deploy' in porep-market
   --from-env        Resume using existing .env (skip wallet create / .env write)
   --skip-register   Skip SPRegistry registerProviderFor calls
   --skip-control    Skip miner control-address updates
   --skip-datacap    Skip granting DataCap to the Client contract
   -h, --help        Show this help
+
+Deploy contracts with: ./scripts/porep-market/deploy.sh
 
 Environment:
   CURIO_DIR              Path to curio checkout (default: ./extern/curio)
@@ -190,40 +189,8 @@ contract_codesize() {
   cast codesize "$addr" --rpc-url "$RPC_URL" 2>/dev/null | tr -d '[:space:]'
 }
 
-deploy_noop_meta_allocator() {
-  local pk="$1"
-  local bytecode deployed out
-  require_file "$NOOP_META_ALLOCATOR_ARTIFACT"
-  bytecode="$(jq -r '.bytecode.object // .bytecode // empty' "$NOOP_META_ALLOCATOR_ARTIFACT")"
-  [[ "$bytecode" =~ ^0x[0-9a-fA-F]+$ ]] || die "invalid bytecode in ${NOOP_META_ALLOCATOR_ARTIFACT}"
-
-  # Logs must go to stderr: callers capture stdout as the contract address.
-  log "deploying NoOpMetaAllocator for META_ALLOCATOR" >&2
-  # cast 1.x: wallet/rpc options must precede the `--create` subcommand.
-  # Bump FEVM gas above Lotus defaults so a retry can replace-by-fee if a prior
-  # deploy attempt is still sitting in mpool (common after a partial --deploy).
-  out="$(
-    cast send \
-      --private-key "$pk" \
-      --rpc-url "$RPC_URL" \
-      --priority-gas-price 200000 \
-      --gas-price 1000000000 \
-      --json \
-      --create "$bytecode" 2>&1
-  )" || die "NoOpMetaAllocator deploy failed: ${out}"
-
-  deployed="$(printf '%s\n' "$out" | jq -r '.contractAddress // empty' | tr -d '[:space:]')"
-  if [[ -z "$deployed" || "$deployed" == "null" ]]; then
-    deployed="$(printf '%s\n' "$out" | awk '/contractAddress/{print $NF; exit}' | tr -d '[:space:]\",')"
-  fi
-  [[ "$deployed" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "could not parse NoOpMetaAllocator address from: ${out}"
-  [[ "$(contract_codesize "$deployed")" -gt 0 ]] || die "NoOpMetaAllocator at ${deployed} has no code"
-  printf '%s\n' "$deployed"
-}
-
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --deploy) DO_DEPLOY=true; shift ;;
     --from-env) FROM_ENV=true; shift ;;
     --skip-register) SKIP_REGISTER=true; shift ;;
     --skip-control) SKIP_CONTROL=true; shift ;;
@@ -253,26 +220,6 @@ curl -sf -m 5 -X POST "$RPC_URL" \
   -d '{"jsonrpc":"2.0","method":"Filecoin.ChainHead","params":[],"id":1}' \
   >/dev/null || die "Lotus RPC not reachable at ${RPC_URL}"
 
-if [[ "$DO_DEPLOY" == true ]]; then
-  require_cmd just
-  require_file "$DEPLOYER_KEY_FILE"
-  ADMIN_PRIVATE_KEY="$(tr -d '[:space:]' < "$DEPLOYER_KEY_FILE")"
-  [[ "$ADMIN_PRIVATE_KEY" =~ ^0x[0-9a-fA-F]{64}$ ]] || die "invalid deployer private key in ${DEPLOYER_KEY_FILE}"
-
-  POREP_MARKET_DIR="$POREP_MARKET_DIR" "${SCRIPT_DIR}/gen-porep-env.sh" --out "${POREP_MARKET_DIR}/.env"
-  require_file "${POREP_MARKET_DIR}/.env"
-
-  # gen-porep-env defaults META_ALLOCATOR to the deployer EOA (no code). Client.transfer
-  # calls addVerifiedClient on that address and reverts on FEVM. Point it at a NoOp contract.
-  META_ALLOCATOR="$(deploy_noop_meta_allocator "$ADMIN_PRIVATE_KEY" | tr -d '[:space:]')"
-  [[ "$META_ALLOCATOR" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "invalid META_ALLOCATOR from deploy: '${META_ALLOCATOR}'"
-  log "setting META_ALLOCATOR=${META_ALLOCATOR} in ${POREP_MARKET_DIR}/.env"
-  set_env_key "${POREP_MARKET_DIR}/.env" META_ALLOCATOR "$META_ALLOCATOR"
-
-  log "deploying porep-market contracts (just devnet_deploy)"
-  (cd "$POREP_MARKET_DIR" && just devnet_deploy)
-fi
-
 require_file "$DEPLOYMENT_JSON"
 
 POREP_MARKET="$(jq -r '.PoRepMarket.proxy // empty' "$DEPLOYMENT_JSON")"
@@ -286,7 +233,7 @@ META_ALLOCATOR="$(jq -r '.MetaAllocator // empty' "$DEPLOYMENT_JSON")"
 [[ -n "$CLIENT_CONTRACT" && "$CLIENT_CONTRACT" != null ]] || die "Client.proxy missing from ${DEPLOYMENT_JSON}"
 [[ -n "$META_ALLOCATOR" && "$META_ALLOCATOR" != null ]] || die "MetaAllocator missing from ${DEPLOYMENT_JSON}"
 if [[ "$(contract_codesize "$META_ALLOCATOR")" -eq 0 ]]; then
-  die "MetaAllocator ${META_ALLOCATOR} has no code (deployer EOA stub). Re-run with --deploy so setup installs NoOpMetaAllocator."
+  die "MetaAllocator ${META_ALLOCATOR} has no code (deployer EOA stub). Run just porep-market deploy first (NoOpMetaAllocator)."
 fi
 CLIENT_CONTRACT_T410="$(eth_to_filecoin "$CLIENT_CONTRACT")"
 [[ -n "$CLIENT_CONTRACT_T410" ]] || die "could not resolve Filecoin address for Client contract ${CLIENT_CONTRACT}"
@@ -364,7 +311,7 @@ ARIA2C_PATH=
 
 # Needed for sp claim-allocations curio command.
 # Default: docker wrapper (Curio runs in container on this setup).
-CURIO_PATH=${SCRIPT_DIR}/curio-cli.sh
+CURIO_PATH=${CURIO_CLI}
 
 # Needed for sp claim-allocations boost command, path for boostd binary, leave empty to use PATH lookup
 BOOSTD_PATH=
@@ -389,7 +336,7 @@ ADMIN_PRIVATE_KEY=${ADMIN_PRIVATE_KEY}
 ADMIN_LOTUS_WALLET=
 ADMIN_LOTUS_TOKEN=
 
-# Fresh SP organization created by scripts/up-porep.sh
+# Fresh SP organization created by scripts/porep-market/up.sh
 # Native Lotus address: ${ORG_T410}
 SP_PRIVATE_KEY=${ORG_PRIVATE_KEY}
 SP_LOTUS_WALLET=
@@ -600,7 +547,7 @@ Notes:
   - CLI ABIs may still lag the deployed contracts (register used cast).
   - Control addresses were waited on and isAuthorizedForProvider checked (unless --skip-control).
   - Client contract DataCap was granted for make-allocations (unless --skip-datacap).
-  - MetaAllocator must be a contract (NoOpMetaAllocator when using --deploy); EOA stubs break transfer.
+  - MetaAllocator must be a contract (NoOpMetaAllocator from deploy.sh); EOA stubs break transfer.
   - Only Curio miners are registered by default so proposeDeal does not pick lotus-miner.
   - Org wallet is an *extra* control address; BLS worker stays WindowPoSt sender (eth-as-post freezes the chain at ~718).
   - lotus-miner control is not touched unless REGISTER_LOTUS_MINER=true.

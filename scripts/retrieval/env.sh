@@ -1,7 +1,7 @@
 # Source this file to export Curio / PoRep Market env for local sp-proxy + retrieval-client.
 #
 # Usage (from repo root):
-#   source ./scripts/retrieval-env.sh
+#   source ./scripts/retrieval/env.sh
 #
 # Then e.g.:
 #   ../large-paid-retrievals/bin/sp-proxy ... --pay-payments-address "$PAYMENTS" --pay-token-address "$USDFC" \
@@ -16,12 +16,12 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 fi
 
 _retrieval_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "${_retrieval_script_dir}/lib/common.sh"
+# shellcheck source=../lib/common.sh
+source "${_retrieval_script_dir}/../lib/common.sh"
 # When sourced, die must not exit the interactive shell.
 die() { printf 'retrieval-env: %s\n' "$*" >&2; return 1; }
-# shellcheck source=lib/envfile.sh
-source "${_retrieval_script_dir}/lib/envfile.sh"
+# shellcheck source=../lib/envfile.sh
+source "${_retrieval_script_dir}/../lib/envfile.sh"
 
 _retrieval_porep_env="${POREP_ENV_FILE:-${ENV_FILE}}"
 _retrieval_contracts_json="${CONTRACTS_DIR}/contract_addresses.json"

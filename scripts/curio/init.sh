@@ -1,58 +1,30 @@
 #!/usr/bin/env bash
-# Initialize all git submodules, apply local patches, prepare Curio
-# contracts-bootstrap local-src, then build Curio docker/devnet images.
+# Apply Curio patches, prepare contracts-bootstrap local-src, build docker/devnet images.
 #
 # When Curio is itself a submodule, `.git` is a gitdir pointer into the
 # superproject. Inside the image that path does not exist, so any
 # `git submodule update` during `docker/devnet` fails. Working-tree fixes
-# live in patches/curio/ and patches/filecoin-porep-market-tooling/.
+# live in patches/curio/.
 #
 # Usage (from repo root):
-#   ./scripts/init.sh
-#   just init
+#   ./scripts/curio/init.sh
+#   just curio init
 #
 # Env:
-#   CURIO_DIR / TOOLING_DIR / SKIP_DOCKER=1
+#   CURIO_DIR / SKIP_DOCKER=1
 #
-# Idempotent: resets Curio/tooling to pinned commits, re-applies patches,
+# Idempotent: resets Curio to pinned commit, re-applies patches,
 # ensures local-src checkouts, then rebuilds images unless SKIP_DOCKER=1.
+# Run `git submodule update --init --recursive` first (just init does this).
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIR}/../lib/common.sh"
 
 CURIO_PATCH_DIR="${CURIO_PATCH_DIR:-${REPO_ROOT}/patches/curio}"
-TOOLING_PATCH_DIR="${TOOLING_PATCH_DIR:-${REPO_ROOT}/patches/filecoin-porep-market-tooling}"
 SKIP_DOCKER="${SKIP_DOCKER:-0}"
-
-# Reset a submodule working tree to the gitlink commit and apply *.patch files.
-apply_patches() {
-  local target_dir="$1" patch_dir="$2" label="$3"
-  local patches patch
-
-  [[ -d "$target_dir" ]] || die "${label} submodule missing at ${target_dir}"
-  [[ -d "$patch_dir" ]] || die "missing patch dir ${patch_dir}"
-
-  log "resetting ${label} working tree to pinned submodule commit"
-  git -C "$target_dir" reset --hard HEAD
-  git -C "$target_dir" clean -fd
-
-  log "applying ${label} patches from ${patch_dir#"$REPO_ROOT"/}"
-  shopt -s nullglob
-  patches=("$patch_dir"/*.patch)
-  [[ ${#patches[@]} -gt 0 ]] || die "no *.patch files in ${patch_dir}"
-  for patch in "${patches[@]}"; do
-    log "  $(basename "$patch")"
-    git -C "$target_dir" apply --whitespace=nowarn "$patch" \
-      || die "failed to apply ${patch#"$REPO_ROOT"/}"
-  done
-  shopt -u nullglob
-
-  log "${label} local diff after patches:"
-  git -C "$target_dir" --no-pager diff --stat
-}
 
 # From extern/curio/docker/local-src/README.md — needed when CONTRACT_SOURCE_MODE=local.
 prepare_curio_local_src() {
@@ -89,23 +61,18 @@ prepare_curio_local_src() {
 
 cd "$REPO_ROOT"
 
-[[ -f .gitmodules ]] || die "no .gitmodules in ${REPO_ROOT} (run from this repo)"
-
-log "git submodule update --init --recursive"
-git submodule update --init --recursive
+[[ -d "$CURIO_DIR" ]] || die "Curio submodule missing at ${CURIO_DIR} (run: git submodule update --init --recursive)"
 
 # Discard prior local patches so re-runs are deterministic.
 # Do not use `git clean -x` on Curio — that would wipe docker/local-src mounts.
 apply_patches "$CURIO_DIR" "$CURIO_PATCH_DIR" "Curio"
-apply_patches "$TOOLING_DIR" "$TOOLING_PATCH_DIR" "filecoin-porep-market-tooling"
 
 prepare_curio_local_src
 
 [[ -d "${CURIO_DIR}/extern/filecoin-ffi" ]] \
   || die "curio/extern/filecoin-ffi missing after submodule update"
 
-log "submodules ready"
-git submodule status --recursive
+log "Curio submodule ready"
 
 if [[ "$SKIP_DOCKER" == "1" ]]; then
   log "SKIP_DOCKER=1 — not running make docker/devnet"

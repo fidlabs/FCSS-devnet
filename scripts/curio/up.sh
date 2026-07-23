@@ -3,14 +3,15 @@
 # disable WinningPoSt, miner control, escrow funding.
 #
 # Usage (from repo root):
-#   ./scripts/up-curio.sh
-#   just up   # runs this after compose up
+#   ./scripts/curio/up.sh
+#   just curio up
+#   just up   # compose up + this script + porep deploy/up
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIR}/../lib/common.sh"
 
 # Set or add a key in a TOML section.
 # Updates within the target section only; removes stale copies elsewhere.

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Forward curio CLI invocations into the Curio docker compose service.
-# Use with: CURIO_PATH=/path/to/scripts/curio-cli.sh
+# Use with: CURIO_PATH=/path/to/scripts/curio/cli.sh
 #
 # Defaults match curio/docker (project curio-devnet, service curio).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIR}/../lib/common.sh"
 
 compose() {
   docker compose -p "$CURIO_COMPOSE_PROJECT" "$@"

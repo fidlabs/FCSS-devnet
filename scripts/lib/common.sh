@@ -1,14 +1,18 @@
 # Shared path defaults and helpers for porep-curio-devnet scripts.
-# Source from a script under scripts/:  source "${SCRIPT_DIR}/lib/common.sh"
+# Source from a script under scripts/<mod>/:
+#   source "${SCRIPT_DIR}/../lib/common.sh"
 #
 # Safe to source multiple times. Does not enable set -e (caller owns that).
 # Compatible with macOS /bin/bash 3.2.
+# REPO_ROOT / SCRIPTS_DIR are derived from this file's location (not the caller).
 
 _POREP_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _POREP_SCRIPTS_DIR="$(cd "${_POREP_LIB_DIR}/.." && pwd)"
 
-: "${SCRIPT_DIR:=${_POREP_SCRIPTS_DIR}}"
+: "${SCRIPTS_DIR:=${_POREP_SCRIPTS_DIR}}"
 : "${REPO_ROOT:=$(cd "${_POREP_SCRIPTS_DIR}/.." && pwd)}"
+# Caller may set SCRIPT_DIR to its own directory; default to scripts/.
+: "${SCRIPT_DIR:=${_POREP_SCRIPTS_DIR}}"
 
 : "${CURIO_DIR:=${REPO_ROOT}/extern/curio}"
 : "${POREP_MARKET_DIR:=${REPO_ROOT}/extern/porep-market}"
@@ -16,6 +20,7 @@ _POREP_SCRIPTS_DIR="$(cd "${_POREP_LIB_DIR}/.." && pwd)"
 : "${CURIO_DOCKER_DIR:=${CURIO_DIR}/docker}"
 : "${CONTRACTS_DIR:=${CURIO_CONTRACTS_DIR:-${CURIO_DOCKER_DIR}/data/contracts}}"
 : "${CURIO_CONTRACTS_DIR:=${CONTRACTS_DIR}}"
+: "${CURIO_CLI:=${SCRIPTS_DIR}/curio/cli.sh}"
 
 # Prefer RPC_URL; accept legacy aliases.
 : "${RPC_URL:=${RPC:-${CURIO_RPC_URL:-${PAY_RPC_URL:-http://127.0.0.1:1234/rpc/v1}}}}"
@@ -45,4 +50,32 @@ require_file() {
 require_container() {
   docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null | grep -qx true \
     || die "docker container '$1' is not running"
+}
+
+# Reset a submodule working tree to the gitlink commit and apply *.patch files.
+# Usage: apply_patches TARGET_DIR PATCH_DIR LABEL
+apply_patches() {
+  local target_dir="$1" patch_dir="$2" label="$3"
+  local patches patch
+
+  [[ -d "$target_dir" ]] || die "${label} submodule missing at ${target_dir}"
+  [[ -d "$patch_dir" ]] || die "missing patch dir ${patch_dir}"
+
+  log "resetting ${label} working tree to pinned submodule commit"
+  git -C "$target_dir" reset --hard HEAD
+  git -C "$target_dir" clean -fd
+
+  log "applying ${label} patches from ${patch_dir#"$REPO_ROOT"/}"
+  shopt -s nullglob
+  patches=("$patch_dir"/*.patch)
+  [[ ${#patches[@]} -gt 0 ]] || die "no *.patch files in ${patch_dir}"
+  for patch in "${patches[@]}"; do
+    log "  $(basename "$patch")"
+    git -C "$target_dir" apply --whitespace=nowarn "$patch" \
+      || die "failed to apply ${patch#"$REPO_ROOT"/}"
+  done
+  shopt -u nullglob
+
+  log "${label} local diff after patches:"
+  git -C "$target_dir" --no-pager diff --stat
 }

@@ -4,7 +4,7 @@
 # Prerequisites: lotus + yugabyte/curio stack running; cast + jq; client.key + sp.key present.
 #
 # Usage (from repo root):
-#   ./scripts/retrieval-fund.sh
+#   ./scripts/retrieval/fund.sh
 #
 # Overrides:
 #   CLIENT_KEY / SP_KEY, CONTRACTS_DIR, RPC_URL (or RPC), LOTUS_CONTAINER,
@@ -13,10 +13,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "${SCRIPT_DIR}/lib/common.sh"
-# shellcheck source=lib/lotus.sh
-source "${SCRIPT_DIR}/lib/lotus.sh"
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIR}/../lib/common.sh"
+# shellcheck source=../lib/lotus.sh
+source "${SCRIPT_DIR}/../lib/lotus.sh"
 
 CLIENT_KEY="${CLIENT_KEY:-${REPO_ROOT}/../large-paid-retrievals/client.key}"
 SP_KEY="${SP_KEY:-${REPO_ROOT}/../large-paid-retrievals/sp.key}"

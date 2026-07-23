@@ -3,7 +3,7 @@
 # for retrieval-client and sp-proxy.
 #
 # Usage (from repo root):
-#   ./scripts/retrieval-keys.sh
+#   ./scripts/retrieval/keys.sh
 #
 # Overrides:
 #   ENV_FILE     path to .env (default ./extern/filecoin-porep-market-tooling/.env)
@@ -13,10 +13,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "${SCRIPT_DIR}/lib/common.sh"
-# shellcheck source=lib/envfile.sh
-source "${SCRIPT_DIR}/lib/envfile.sh"
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIR}/../lib/common.sh"
+# shellcheck source=../lib/envfile.sh
+source "${SCRIPT_DIR}/../lib/envfile.sh"
 
 CLIENT_KEY="${CLIENT_KEY:-${REPO_ROOT}/../large-paid-retrievals/client.key}"
 SP_KEY="${SP_KEY:-${REPO_ROOT}/../large-paid-retrievals/sp.key}"
