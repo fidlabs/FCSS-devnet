@@ -9,7 +9,7 @@ mod tooling 'just/tooling.just'
 default:
     @just --list
 
-# Submodules + Curio patches/images + tooling patches/venv
+# Submodules + Curio patches/images + tooling venv
 init:
     git submodule update --init --recursive
     just curio init
@@ -27,5 +27,15 @@ logs:
 down:
     just curio down
 
+# Flags go straight to the script. Example: just make-deal --deal-id 1
 make-deal *args:
-    just tooling make-deal {{args}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    venv="extern/filecoin-porep-market-tooling/.venv"
+    [[ -f "${venv}/bin/activate" ]] || {
+      echo "error: missing ${venv} — run just init (or just tooling init)" >&2
+      exit 1
+    }
+    # shellcheck disable=SC1091
+    source "${venv}/bin/activate"
+    ./scripts/tooling/make-deal.sh {{args}}

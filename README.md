@@ -1,18 +1,35 @@
-# porep-curio-devnet
+# FCSS-devnet
 
-Machinery to set up a **local Curio docker-devnet** capable of running **PoRep Market deals** and supporting **large paid retrievals**.
+**FCSS** = **Filecoin Cold Storage Service**. This repository ([`fidlabs/FCSS-devnet`](https://github.com/fidlabs/FCSS-devnet)) is the local **FCSS** development network: a **Curio docker-devnet** that runs **PoRep Market V2 deals** and supports **large paid retrievals**.
+
+(Working tree directory may still be named `porep-curio-devnet`; the GitHub repo name is **FCSS-devnet**.)
+
+This repo targets **PoRep Market V2 contracts** only (`extern/porep-market` on `main`): forge `Deploy.s.sol`, SPRegistry offers, `DataCapEvidenceAdapter` (not the V1 `Client` contract), and the V2 deal lifecycle. It does **not** use V1 `just devnet_deploy` / V1 Client flows.
 
 The resulting stack is suitable for testing [`fidlabs/large-paid-retrievals`](https://github.com/fidlabs/large-paid-retrievals) (`sp-proxy` + `retrieval-client` over MPP / Filecoin Pay). See that project’s README for how to run retrievals against this devnet.
 
-Pinned submodule versions: **Curio v1.28.2**, **porep-market v1.2.0**, **filecoin-porep-market-tooling v1**.
+Pinned submodule versions: **Curio v1.28.2**, **porep-market** (`main` / **V2**), **filecoin-porep-market-tooling** (`feature-v2-adjust-contracts`).
+
+## PoRep Market V2
+
+| Piece | V2 in this stack |
+|-------|------------------|
+| Deploy | `forge script Deploy.s.sol` → `extern/porep-market/deployments/devnet/latest.json` (needs forge libs under `lib/`, from `just init`) |
+| Market | `PoRepMarket` proxy (UUPS); deals via `proposeDeal` → accept (if still `PROPOSED`) → init rail |
+| Registry | `SPRegistry` — `registerProviderFor`, `setPaymentToken`, `createOffer` (offer price defaults to `1`; contract rejects `0`) |
+| Evidence | `DataCapEvidenceAdapter` — `submitDataCapBatch` + `finishDataCapPosting` (DataCap is granted to the adapter, not a V1 Client) |
+| Tooling | CLI on `feature-v2-adjust-contracts` for propose → allocate → claim |
+| Deal states | `PROPOSED` → `ACCEPTED` → `ACTIVE` → `FINALIZED` (no V1 `COMPLETED`; DataCap posting finishes while the deal is still `ACCEPTED`) |
+
+Orchestration: [`scripts/porep-market/deploy.sh`](scripts/porep-market/deploy.sh), [`up.sh`](scripts/porep-market/up.sh), [`gen-env.sh`](scripts/porep-market/gen-env.sh), and [`scripts/tooling/make-deal.sh`](scripts/tooling/make-deal.sh). After a chain reset with existing wallets, refresh wiring with `just porep-market up --from-env`.
 
 ## Dependencies
 
 | Dependency | Role |
 |------------|------|
 | [`curio`](extern/curio) (git submodule, **v1.28.2**) | Lotus + Curio docker stack |
-| [`porep-market`](extern/porep-market) (git submodule, **v1.2.0**) | PoRep Market / SPRegistry / Client contracts |
-| [`filecoin-porep-market-tooling`](extern/filecoin-porep-market-tooling) (git submodule, **v1**) | Client/SP CLI for propose → allocate → claim |
+| [`porep-market`](extern/porep-market) (git submodule, **main** / **V2**) | PoRep Market V2, SPRegistry, DataCapEvidenceAdapter |
+| [`filecoin-porep-market-tooling`](extern/filecoin-porep-market-tooling) (git submodule, **feature-v2-adjust-contracts**) | V2 client/SP CLI for propose → allocate → claim |
 | [`large-paid-retrievals`](https://github.com/fidlabs/large-paid-retrievals) | `sp-proxy` + `retrieval-client` (MPP / Filecoin Pay); test against this devnet |
 
 `curio`, `porep-market`, and `filecoin-porep-market-tooling` are vendored under [`extern/`](extern/) as git submodules.
@@ -20,14 +37,15 @@ Pinned submodule versions: **Curio v1.28.2**, **porep-market v1.2.0**, **filecoi
 ## Quick start
 
 ```bash
-git clone <this-repo>
-just init    # submodules, patches, docker images, tooling venv
-just up      # compose up + Curio config + porep deploy + SP wiring
+git clone https://github.com/fidlabs/FCSS-devnet.git
+cd FCSS-devnet
+just init    # submodules (recursive), Curio patches/images, tooling venv
+just up      # compose up + Curio config + porep V2 deploy + SP wiring
 # prepare + serve a deal manifest/pieces (e.g. Singularity — see below), then:
 just make-deal
 ```
 
-`just init` runs `git submodule update --init --recursive`, then `just curio init` and `just tooling init`. Set `SKIP_DOCKER=1` to skip the Curio image build; `SKIP_VENV=1` to skip the tooling venv.
+`just init` runs `git submodule update --init --recursive`, then `just curio init` and `just tooling init`. Recursive init is required for porep-market forge libs (`lib/fvm-solidity`, …). Set `SKIP_DOCKER=1` to skip the Curio image build; `SKIP_VENV=1` to skip the tooling venv.
 
 ## Just recipes
 
@@ -36,9 +54,9 @@ Root recipes compose submodule modules ([`just/`](just/)):
 | Recipe | Does |
 |--------|------|
 | `just init` | submodule update → `curio init` → `tooling init` |
-| `just up` | `curio up` → `porep-market deploy` → `porep-market up` |
+| `just up` | `curio up` → `porep-market deploy` (V2 forge) → `porep-market up` |
 | `just logs` / `just down` | Curio compose logs / tear down |
-| `just make-deal` | tooling venv + deal pipeline |
+| `just make-deal …` | tooling venv + V2 deal pipeline (flags go to the script) |
 
 Namespaced (same scripts):
 
@@ -48,20 +66,20 @@ Namespaced (same scripts):
 
 ## Scripts
 
-Shared helpers live in [`scripts/lib/`](scripts/lib/) (`common.sh`, `envfile.sh`, `lotus.sh`). Task scripts are under the submodule they touch:
+Shared helpers live in [`scripts/lib/`](scripts/lib/) (`common.sh`, `envfile.sh`, `lotus.sh`). Task scripts in this repo configure the vendored submodules:
 
 | Script | Purpose |
 |--------|---------|
 | `scripts/curio/init.sh` | Curio patches, `local-src`, `make docker/devnet` |
 | `scripts/curio/up.sh` | Post-bootstrap Curio config (SSRF, IPNI, WinningPoSt, control, escrow) |
 | `scripts/curio/cli.sh` | `CURIO_PATH` wrapper: `curio` inside the compose service |
-| `scripts/porep-market/gen-env.sh` | Write porep-market `.env` from Curio contract artifacts |
-| `scripts/porep-market/deploy.sh` | NoOp MetaAllocator + `just devnet_deploy` |
-| `scripts/porep-market/up.sh` | SP org + tooling `.env` + register miner + DataCap |
-| `scripts/tooling/init.sh` | Tooling patches + Python venv |
-| `scripts/tooling/make-deal.sh` | Propose → accept → allocate → onboard → claim → add-url |
+| `scripts/porep-market/gen-env.sh` | Write porep-market `.env` for V2 `Deploy.s.sol` + Curio artifacts |
+| `scripts/porep-market/deploy.sh` | NoOp MetaAllocator + V2 `forge script Deploy.s.sol` |
+| `scripts/porep-market/up.sh` | SP org + tooling `.env` + V2 register/offer + DataCap to adapter |
+| `scripts/tooling/init.sh` | Tooling Python venv |
+| `scripts/tooling/make-deal.sh` | V2 propose → accept → init rail → allocate → onboard → claim → add-url |
 
-Also: [`contracts/allocator/NoOpMetaAllocator.{sol,json}`](contracts/allocator/) (MetaAllocator stub for local Client DataCap transfer).
+Also: [`contracts/allocator/NoOpMetaAllocator.{sol,json}`](contracts/allocator/) (MetaAllocator stub so DataCapEvidenceAdapter can call `addVerifiedClient` on FEVM).
 
 ## Typical flow
 
@@ -263,7 +281,8 @@ curl -sI "http://127.0.0.1:7777/piece/<pieceCid>" | head
 In another terminal, HTTP-serve the directory that contains `manifest.json` (filename must match the URL path):
 
 ```bash
-# if manifest.json lives next to porep-curio-devnet / singularity-root parent:
+# if manifest.json lives next to FCSS-devnet / singularity-root parent:
+
 cd /path/to/0110-Filecoin-Retrievals-Private-Datasets
 python3 -m http.server 8080 --bind 127.0.0.1
 ```
@@ -272,19 +291,20 @@ python3 -m http.server 8080 --bind 127.0.0.1
 curl -sf http://127.0.0.1:8080/manifest.json | jq '.[0].pieces | length'
 ```
 
-Tooling is patched in this repo to allow loopback/private manifest URLs (`patches/filecoin-porep-market-tooling/`); that lands via `just tooling init`.
+`just make-deal` / `scripts/tooling/make-deal.sh` sets `ALLOW_PRIVATE_MANIFEST_URLS=true` so the tooling CLI accepts loopback/private manifest URLs.
 
 ### 6. Run the deal
 
 With Curio already up (`just up`) and both servers running:
 
 ```bash
-cd porep-curio-devnet
+cd FCSS-devnet   # or your local clone directory
 just make-deal
 # or: just make-deal --manifest-url http://127.0.0.1:8080/manifest.json
+# resume: just make-deal --deal-id 1
 ```
 
-Optional overrides: `MANIFEST_URL`, `PIECE_BASE_URL`, `--deal-id`, `--wait-claims` (see `scripts/tooling/make-deal.sh --help`).
+Pass flags directly to the script, e.g. `just make-deal --deal-id 1`. Optional overrides: `MANIFEST_URL`, `PIECE_BASE_URL`, `--deal-id`, `--wait-claims`, `--skip-onboard` (see `scripts/tooling/make-deal.sh --help`).
 
 ### Checklist when CommP / onboard fails
 
@@ -296,7 +316,8 @@ Optional overrides: `MANIFEST_URL`, `PIECE_BASE_URL`, `--deal-id`, `--wait-claim
 ## Prerequisites
 
 - Docker
-- `cast`, `jq`, `curl`; `just` + `forge` for contract deploy
+- `cast`, `jq`, `curl`; `just` + `forge` (Foundry) for V2 contract deploy
+- Recursive git submodules (`just init`) so porep-market forge libs exist under `extern/porep-market/lib/`
 - `aria2c` for `make-deal` onboard-data
 - Singularity CLI (`go install github.com/data-preservation-programs/singularity@latest`) for piece prep + content-provider
 - Tooling venv via `just init` (or `just tooling init`)

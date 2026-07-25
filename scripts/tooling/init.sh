@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Apply filecoin-porep-market-tooling patches and ensure the Python venv.
+# Ensure the filecoin-porep-market-tooling Python venv is ready.
 #
 # Usage (from repo root):
 #   ./scripts/tooling/init.sh
@@ -8,8 +8,7 @@
 # Env:
 #   TOOLING_DIR / SKIP_VENV=1
 #
-# Idempotent: resets tooling to pinned commit, re-applies patches,
-# creates .venv and pip-installs requirements unless SKIP_VENV=1.
+# Idempotent: creates .venv and pip-installs requirements unless SKIP_VENV=1.
 # Run `git submodule update --init --recursive` first (just init does this).
 
 set -euo pipefail
@@ -18,16 +17,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../lib/common.sh
 source "${SCRIPT_DIR}/../lib/common.sh"
 
-TOOLING_PATCH_DIR="${TOOLING_PATCH_DIR:-${REPO_ROOT}/patches/filecoin-porep-market-tooling}"
 SKIP_VENV="${SKIP_VENV:-0}"
 
 cd "$REPO_ROOT"
 
 [[ -d "$TOOLING_DIR" ]] || die "tooling submodule missing at ${TOOLING_DIR} (run: git submodule update --init --recursive)"
+[[ -f "${TOOLING_DIR}/porep_tooling_cli.py" ]] || die "porep_tooling_cli.py missing in ${TOOLING_DIR}"
 
-apply_patches "$TOOLING_DIR" "$TOOLING_PATCH_DIR" "filecoin-porep-market-tooling"
-
-log "tooling submodule ready"
+log "tooling submodule ready at ${TOOLING_DIR#"$REPO_ROOT"/}"
 
 if [[ "$SKIP_VENV" == "1" ]]; then
   log "SKIP_VENV=1 — not creating/updating Python venv"
@@ -45,4 +42,4 @@ require_file "${TOOLING_DIR}/requirements.txt"
 log "pip install -r ${TOOLING_DIR#"$REPO_ROOT"/}/requirements.txt"
 "${TOOLING_DIR}/.venv/bin/pip" install -r "${TOOLING_DIR}/requirements.txt"
 
-log "done — tooling patches applied and venv ready"
+log "done — tooling venv ready"

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Generate porep-market .env for local Curio / FEVM deploy (`just devnet_deploy`).
+# Generate porep-market .env for local Curio / FEVM deploy (forge script Deploy.s.sol).
 #
 # Reads Curio docker contract bootstrap artifacts and writes the unprefixed
 # FILECOIN_PAY / role vars that script/Deploy.s.sol expects, plus
-# RPC_TEST / PRIVATE_KEY_TEST used by justfile's devnet_* recipes.
+# RPC_TEST / PRIVATE_KEY_TEST used by scripts/porep-market/deploy.sh.
 #
 # Usage:
 #   ./scripts/porep-market/gen-env.sh
@@ -23,7 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../lib/common.sh
 source "${SCRIPT_DIR}/../lib/common.sh"
 
-# Write into the porep-market checkout by default (Deploy.s.sol / justfile live there).
+# Write into the porep-market checkout by default (Deploy.s.sol lives there).
 cd "$POREP_MARKET_DIR"
 
 contracts_dir="${CURIO_CONTRACTS_DIR:-$CONTRACTS_DIR}"
@@ -147,11 +147,12 @@ cat >"$out_file" <<EOF
 #
 # Role / MetaAllocator addresses are not part of Curio bootstrap; they default
 # to the Curio deployer EOA so local roles are callable with PRIVATE_KEY_TEST.
+# deploy.sh replaces META_ALLOCATOR with a NoOp contract before forge deploy.
 
 RPC_TEST=$rpc_url
 PRIVATE_KEY_TEST=$private_key
 
-# Required by script/Deploy.s.sol (unprefixed — justfile does not remap these for devnet)
+# Required by script/Deploy.s.sol (unprefixed — local forge path in deploy.sh)
 FILECOIN_PAY=$filecoin_pay
 TERMINATION_ORACLE=$deployer
 ORACLE=$deployer
@@ -159,18 +160,16 @@ POREP_SERVICE=$deployer
 OPERATOR_ADDR=$deployer
 META_ALLOCATOR=$deployer
 
-# Unused for local deploy (parity with .env.example)
+# Unused for local deploy (parity with .env.example calibnet/mainnet keys)
 RPC_CALIBNET=https://api.calibration.node.glif.io/rpc/v1
 RPC_MAINNET=https://api.node.glif.io/rpc/v1
 PRIVATE_KEY_CALIBNET=
 PRIVATE_KEY_MAINNET=
 RESCUE_PRIVATE_KEY_MAINNET=
-UPGRADE_CONTRACT_NAME=Client
-UPGRADE_CALLDATA=0x
 EOF
 
 printf 'wrote %s\n' "$out_file"
 printf '  FILECOIN_PAY=%s\n' "$filecoin_pay"
 printf '  deployer/roles=%s\n' "$deployer"
 printf '  RPC_TEST=%s\n' "$rpc_url"
-printf 'next: just devnet_deploy\n'
+printf 'next: just porep-market deploy\n'

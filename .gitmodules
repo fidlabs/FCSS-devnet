@@ -5,6 +5,7 @@
 [submodule "extern/porep-market"]
 	path = extern/porep-market
 	url = https://github.com/fidlabs/porep-market.git
+	ignore = dirty
 [submodule "extern/filecoin-porep-market-tooling"]
 	path = extern/filecoin-porep-market-tooling
 	url = https://github.com/fidlabs/filecoin-porep-market-tooling.git

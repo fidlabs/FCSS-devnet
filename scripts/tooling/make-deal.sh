@@ -37,6 +37,10 @@ source "${SCRIPT_DIR}/../lib/envfile.sh"
 
 ENV_FILE="${ENV_FILE:-${TOOLING_DIR}/.env}"
 
+# Local Singularity / piece-server manifests are typically on loopback; tooling
+# SSRF-guards those unless ALLOW_PRIVATE_MANIFEST_URLS is set.
+export ALLOW_PRIVATE_MANIFEST_URLS="${ALLOW_PRIVATE_MANIFEST_URLS:-true}"
+
 if [[ -x "${TOOLING_DIR}/.venv/bin/python" ]]; then
   PYTHON="${TOOLING_DIR}/.venv/bin/python"
 else
@@ -143,8 +147,26 @@ miner_id_num() {
   echo "$1" | sed -E 's/^[tf]0*//'
 }
 
+# get-deal returns PoRepMarketDealView (nested under .deal / .data).
+deal_view_jq() {
+  local deal_id="$1"
+  local expr="$2"
+  cli_json_retry client get-deal "$deal_id" | jq -r "$expr"
+}
+
 provider_num_from_deal() {
-  cli_json_retry client get-deal "$1" | jq -r '.provider_id' | sed -E 's/^[tf]0*//'
+  deal_view_jq "$1" '.deal.provider_id' | sed -E 's/^[tf]0*//'
+}
+
+# V2: deal stays ACCEPTED after DataCap posting; there is no COMPLETED state.
+datacap_posting_finished() {
+  local deal_id="$1"
+  local adapter rpc
+  adapter="$(deal_view_jq "$deal_id" '.deal.evidence_adapter_address')"
+  [[ -n "$adapter" && "$adapter" != "null" && "$adapter" != "0x0000000000000000000000000000000000000000" ]] || return 1
+  rpc="$(env_get RPC_URL)"
+  cast call "$adapter" "isDataCapPostingFinished(uint256)(bool)" "$deal_id" --rpc-url "$rpc" 2>/dev/null \
+    | tr -d '[:space:]' | grep -qi '^true$'
 }
 
 resolve_lotus_miner_id() {
@@ -264,7 +286,7 @@ attach_curio_piece_urls() {
   fi
 
   provider_num="$(
-    cli_json_retry client get-deal "$deal_id" | jq -r '.provider_id' | sed -E 's/^[tf]0*//'
+    deal_view_jq "$deal_id" '.deal.provider_id' | sed -E 's/^[tf]0*//'
   )"
   [[ -n "$provider_num" ]] || die "could not resolve provider id for deal ${deal_id}"
 
@@ -534,7 +556,7 @@ wait_deal_state() {
   local attempts="${3:-60}"
   local i state
   for i in $(seq 1 "$attempts"); do
-    state="$(cli_json_retry client get-deal "$deal_id" | jq -r '.state')"
+    state="$(deal_view_jq "$deal_id" '.deal.state')"
     if [[ "$state" == "$want" ]]; then
       log "deal ${deal_id} state=${state}"
       return 0
@@ -544,15 +566,22 @@ wait_deal_state() {
   die "deal ${deal_id} did not reach ${want} (last state=${state:-unknown})"
 }
 
+# get-deals returns PoRepMarketDeal (no manifest_location); match via get-deal .data.
 latest_deal_id_for_manifest() {
   local manifest="$1"
   local state="${2:-}"
-  local args=(client get-deals)
+  local args=(client get-deals) ids id loc best=""
   [[ -n "$state" ]] && args+=("$state")
-  cli_json_retry "${args[@]}" | jq -r --arg m "$manifest" '
-    [.[] | select(.manifest_location == $m)]
-    | if length == 0 then empty else max_by(.deal_id) | .deal_id end
-  '
+  ids="$(cli_json_retry "${args[@]}" | jq -r '.[].deal_id')"
+  for id in $ids; do
+    [[ -n "$id" && "$id" != "null" ]] || continue
+    loc="$(deal_view_jq "$id" '.data.manifest_location' 2>/dev/null || true)"
+    [[ "$loc" == "$manifest" ]] || continue
+    if [[ -z "$best" ]] || [[ "$id" -gt "$best" ]]; then
+      best="$id"
+    fi
+  done
+  [[ -n "$best" ]] && printf '%s\n' "$best"
 }
 
 # Poll until get-deals can see the just-proposed deal (tipset fork races after reset).
@@ -613,7 +642,7 @@ deal_id_from_propose_tx() {
 ensure_filecoinpay_operator() {
   local deal_id="$1"
   local validator client filecoin_pay usdc pk max already
-  validator="$(cli_json_retry client get-deal "$deal_id" | jq -r '.validator_address')"
+  validator="$(deal_view_jq "$deal_id" '.deal.validator_address')"
   [[ -n "$validator" && "$validator" != "null" ]] || return 0
   if [[ "$validator" == "0x0000000000000000000000000000000000000000" ]]; then
     return 0
@@ -649,7 +678,7 @@ init_deal() {
   local rail attempts="${INIT_ATTEMPTS:-6}" i
 
   for i in $(seq 1 "$attempts"); do
-    rail="$(cli_json_retry client get-deal "$deal_id" | jq -r '.rail_id')"
+    rail="$(deal_view_jq "$deal_id" '.deal.rail_id')"
     if [[ "$rail" != "0" && -n "$rail" && "$rail" != "null" ]]; then
       log "rail already initialized (rail_id=${rail})"
       return 0
@@ -662,7 +691,7 @@ init_deal() {
     run_cli client init-accepted-deals "$deal_id"
     set -e
 
-    rail="$(cli_json_retry client get-deal "$deal_id" | jq -r '.rail_id')"
+    rail="$(deal_view_jq "$deal_id" '.deal.rail_id')"
     if [[ "$rail" != "0" && -n "$rail" && "$rail" != "null" ]]; then
       log "rail initialized (rail_id=${rail})"
       return 0
@@ -672,7 +701,7 @@ init_deal() {
     sleep 2
   done
 
-  rail="$(cli_json_retry client get-deal "$deal_id" | jq -r '.rail_id')"
+  rail="$(deal_view_jq "$deal_id" '.deal.rail_id')"
   [[ "$rail" != "0" && -n "$rail" && "$rail" != "null" ]] \
     || die "init-accepted-deals left rail_id=0 for deal ${deal_id} after ${attempts} attempts"
 }
@@ -698,21 +727,12 @@ deal_is_fully_claimed() {
 find_resumable_deal_for_manifest() {
   local manifest="$1"
   local deal_id state
-  deal_id="$(
-    cli_json_retry client get-deals 2>/dev/null | jq -r --arg m "$manifest" '
-      [.[] | select(.manifest_location == $m)]
-      | if length == 0 then empty else max_by(.deal_id) | .deal_id end
-    ' 2>/dev/null || true
-  )"
+  deal_id="$(latest_deal_id_for_manifest "$manifest" 2>/dev/null || true)"
   [[ -n "$deal_id" ]] || return 1
-  state="$(cli_json_retry client get-deal "$deal_id" | jq -r '.state')"
+  state="$(deal_view_jq "$deal_id" '.deal.state')"
   case "$state" in
-    PROPOSED|ACCEPTED)
-      printf '%s\n' "$deal_id"
-      return 0
-      ;;
-    COMPLETED)
-      if deal_is_fully_claimed "$deal_id"; then
+    PROPOSED|ACCEPTED|ACTIVE)
+      if [[ "$state" == "ACCEPTED" || "$state" == "ACTIVE" ]] && deal_is_fully_claimed "$deal_id"; then
         return 1
       fi
       printf '%s\n' "$deal_id"
@@ -836,6 +856,18 @@ require_file() { [[ -f "$1" ]] || die "missing required file: $1"; }
 require_file "$ENV_FILE"
 [[ -f "${TOOLING_DIR}/porep_tooling_cli.py" ]] || die "porep_tooling_cli.py not found in ${TOOLING_DIR}"
 
+market="$(env_get POREP_MARKET || true)"
+[[ "$market" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "POREP_MARKET missing/invalid in ${ENV_FILE} (run: just porep-market up)"
+rpc="$(env_get RPC_URL || printf '%s' "$RPC_URL")"
+market_code="$(cast codesize "$market" --rpc-url "$rpc" 2>/dev/null | tr -d '[:space:]')"
+if [[ -z "$market_code" || "$market_code" == "0" ]]; then
+  deployed=""
+  if [[ -f "${POREP_MARKET_DIR}/deployments/devnet/latest.json" ]]; then
+    deployed="$(jq -r '.contracts.PoRepMarket.proxy // empty' "${POREP_MARKET_DIR}/deployments/devnet/latest.json")"
+  fi
+  die "POREP_MARKET ${market} has no code on ${rpc} (stale ${ENV_FILE}?). Deployed market is ${deployed:-unknown}. Run: just porep-market up"
+fi
+
 log "checking manifest at ${MANIFEST_URL}"
 curl -sf -m 10 -o /dev/null "$MANIFEST_URL" || die "manifest not reachable at ${MANIFEST_URL}"
 
@@ -870,9 +902,11 @@ if [[ -z "$DEAL_ID" ]]; then
   set -e
 
   propose_tx="$(
-    grep -Eo '0x[0-9a-fA-F]{64}' "$propose_log" 2>/dev/null | tail -n1 || true
+    # Prefer lines that clearly refer to the broadcast tx (not manifest_hash in JSON).
+    grep -Ei 'Waiting for transaction|Created deal proposal|Deal proposed|transaction hash|Tx hash|sent tx|broadcast' "$propose_log" 2>/dev/null \
+      | grep -Eo '0x[0-9a-fA-F]{64}' \
+      | tail -n1 || true
   )"
-  rm -f "$propose_log"
 
   if [[ $propose_rc -ne 0 && -z "$propose_tx" ]]; then
     # Tipset races: retry a few times without capturing output.
@@ -895,6 +929,12 @@ if [[ -z "$DEAL_ID" ]]; then
     done
   fi
 
+  rm -f "$propose_log"
+
+  if [[ $propose_rc -ne 0 && -z "$propose_tx" ]]; then
+    die "propose-deal-from-manifest failed (rc=${propose_rc}). Stale CLIENT_ADDRESS (needs FIL)? Missing payment token/offer? Re-run: just porep-market up --from-env"
+  fi
+
   if [[ -n "$propose_tx" ]]; then
     log "propose tx ${propose_tx}; resolving deal id (retries tipset/fork races)"
     for _ in $(seq 1 40); do
@@ -909,7 +949,7 @@ if [[ -z "$DEAL_ID" ]]; then
   if [[ -z "$DEAL_ID" ]]; then
     DEAL_ID="$(wait_deal_id_for_manifest "$MANIFEST_URL" || true)"
   fi
-  [[ -n "$DEAL_ID" ]] || die "could not find proposed deal for manifest ${MANIFEST_URL} (chain stuck? height may not be advancing)"
+  [[ -n "$DEAL_ID" ]] || die "could not find proposed deal for manifest ${MANIFEST_URL} (propose failed? run just porep-market up --from-env)"
   log "proposed deal_id=${DEAL_ID}"
 else
   log "resuming with deal_id=${DEAL_ID}"
@@ -917,7 +957,7 @@ fi
 
 assert_deal_provider_is_curio "$DEAL_ID"
 
-state="$(cli_json_retry client get-deal "$DEAL_ID" | jq -r '.state')"
+state="$(deal_view_jq "$DEAL_ID" '.deal.state')"
 log "deal ${DEAL_ID} current state=${state}"
 
 if [[ "$state" == "PROPOSED" ]]; then
@@ -928,41 +968,48 @@ if [[ "$state" == "PROPOSED" ]]; then
 fi
 
 if [[ "$state" == "ACCEPTED" ]]; then
-  rail="$(cli_json_retry client get-deal "$DEAL_ID" | jq -r '.rail_id')"
+  rail="$(deal_view_jq "$DEAL_ID" '.deal.rail_id')"
   if [[ "$rail" == "0" || -z "$rail" || "$rail" == "null" ]]; then
     init_deal "$DEAL_ID"
   else
     log "skipping init (rail_id=${rail})"
   fi
 
-  # make-allocations may need a few passes across tipset races.
-  for _ in $(seq 1 6); do
-    state="$(cli_json_retry client get-deal "$DEAL_ID" | jq -r '.state')"
-    [[ "$state" == "COMPLETED" ]] && break
-    log "client make-allocations ${DEAL_ID} (state=${state})"
-    set +e
-    run_cli_retry client make-allocations "$DEAL_ID"
-    set -e
-    state="$(cli_json_retry client get-deal "$DEAL_ID" | jq -r '.state')"
-    [[ "$state" == "COMPLETED" ]] && break
-    sleep 3
-  done
-  wait_deal_state "$DEAL_ID" COMPLETED 90
-  state=COMPLETED
+  # V2: deal remains ACCEPTED after DataCap posting (no COMPLETED state).
+  if ! datacap_posting_finished "$DEAL_ID"; then
+    for _ in $(seq 1 6); do
+      if datacap_posting_finished "$DEAL_ID"; then
+        break
+      fi
+      state="$(deal_view_jq "$DEAL_ID" '.deal.state')"
+      log "client make-allocations ${DEAL_ID} (state=${state})"
+      set +e
+      run_cli_retry client make-allocations "$DEAL_ID"
+      set -e
+      if datacap_posting_finished "$DEAL_ID"; then
+        break
+      fi
+      sleep 3
+    done
+  fi
+  if ! datacap_posting_finished "$DEAL_ID"; then
+    die "deal ${DEAL_ID}: DataCap posting not finished after make-allocations (still ACCEPTED with unfinished posting?)"
+  fi
+  state="$(deal_view_jq "$DEAL_ID" '.deal.state')"
 fi
 
-if [[ "$state" != "COMPLETED" ]]; then
-  die "deal ${DEAL_ID} is ${state}; expected COMPLETED to continue onboarding"
+if [[ "$state" != "ACCEPTED" && "$state" != "ACTIVE" ]]; then
+  die "deal ${DEAL_ID} is ${state}; expected ACCEPTED or ACTIVE to continue onboarding"
 fi
 
 EXPECTED_PIECES="$(deal_expected_piece_count "$DEAL_ID")"
 ALLOC_COUNT="$(deal_allocation_count "$DEAL_ID")"
 CLAIM_COUNT="$(deal_claim_count "$DEAL_ID")"
-log "deal ${DEAL_ID} COMPLETED: ${ALLOC_COUNT} unclaimed allocation(s), ${CLAIM_COUNT} claim(s), expected pieces=${EXPECTED_PIECES}"
+log "deal ${DEAL_ID} ready (${state}, datacap posting finished): ${ALLOC_COUNT} unclaimed allocation(s), ${CLAIM_COUNT} claim(s), expected pieces=${EXPECTED_PIECES}"
 
 if [[ "$SKIP_ONBOARD" == true ]]; then
   log "skipping onboard/claim (--skip-onboard)"
-  log "done. deal_id=${DEAL_ID} state=COMPLETED"
+  log "done. deal_id=${DEAL_ID} state=${state}"
   exit 0
 fi
 
@@ -1003,10 +1050,10 @@ if [[ "$WAIT_CLAIMS" == true ]]; then
   CLAIM_COUNT="$(deal_claim_count "$DEAL_ID")"
   log "on-chain claims:"
   cli_json_retry sp get-claims "$DEAL_ID" | jq .
-  log "done. deal_id=${DEAL_ID} state=COMPLETED claims=${CLAIM_COUNT}/${EXPECTED_PIECES} onboard_dir=${ONBOARD_DIR}"
+  log "done. deal_id=${DEAL_ID} state=${state} claims=${CLAIM_COUNT}/${EXPECTED_PIECES} onboard_dir=${ONBOARD_DIR}"
 else
   log "all unclaimed allocations have Curio piece URLs — not waiting for on-chain claims"
   log "poll later: ${CLI[*]} sp get-claims ${DEAL_ID}"
   log "or re-run: ./scripts/tooling/make-deal.sh --deal-id ${DEAL_ID} --wait-claims"
-  log "done. deal_id=${DEAL_ID} state=COMPLETED unclaimed=${ALLOC_COUNT} claims=${CLAIM_COUNT} onboard_dir=${ONBOARD_DIR}"
+  log "done. deal_id=${DEAL_ID} state=${state} unclaimed=${ALLOC_COUNT} claims=${CLAIM_COUNT} onboard_dir=${ONBOARD_DIR}"
 fi

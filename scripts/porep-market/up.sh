@@ -4,7 +4,7 @@
 #   2. write .env from Curio + porep-market deployment artifacts
 #   3. register local miners under that org (new SPRegistry ABI via cast)
 #   4. add the org wallet as an *additional* miner control address (keep BLS worker as post)
-#   5. grant DataCap to the Client contract (needed for make-allocations)
+#   5. grant DataCap to DataCapEvidenceAdapter (needed for make-allocations)
 #
 # Deploy contracts first with: ./scripts/porep-market/deploy.sh (or just porep-market deploy)
 #
@@ -36,6 +36,10 @@ source "${SCRIPT_DIR}/../lib/lotus.sh"
 ORG_FUND_AMOUNT="${ORG_FUND_AMOUNT:-100}"
 AVAILABLE_BYTES="${AVAILABLE_BYTES:-10995116277760}" # 10 TiB
 DATACAP_GRANT_BYTES="${DATACAP_GRANT_BYTES:-1000000000}" # 1 GiB, same as Curio mk12 bootstrap
+# V2 offer: 6–60 months (EPOCHS_IN_DAY=2880); price must be >= token min (contract enforces >= 1).
+OFFER_MIN_DURATION_EPOCHS="${OFFER_MIN_DURATION_EPOCHS:-$((6 * 30 * 2880))}"
+OFFER_MAX_DURATION_EPOCHS="${OFFER_MAX_DURATION_EPOCHS:-$((60 * 30 * 2880))}"
+OFFER_PRICE_PER_32GIB_PER_MONTH="${OFFER_PRICE_PER_32GIB_PER_MONTH:-1}"
 ENV_FILE="${ENV_FILE:-${TOOLING_DIR}/.env}"
 
 SKIP_REGISTER=false
@@ -48,10 +52,10 @@ usage() {
 Usage: $(basename "$0") [options]
 
 Options:
-  --from-env        Resume using existing .env (skip wallet create / .env write)
+  --from-env        Resume using existing .env SP wallets; refresh ADMIN + contract addrs
   --skip-register   Skip SPRegistry registerProviderFor calls
   --skip-control    Skip miner control-address updates
-  --skip-datacap    Skip granting DataCap to the Client contract
+  --skip-datacap    Skip granting DataCap to DataCapEvidenceAdapter
   -h, --help        Show this help
 
 Deploy contracts with: ./scripts/porep-market/deploy.sh
@@ -66,7 +70,7 @@ Environment:
   CURIO_CONTAINER        Docker container name (default: curio)
   ORG_FUND_AMOUNT        FIL to send new org wallet (default: 100)
   AVAILABLE_BYTES        Capacity to register (default: 10995116277760)
-  DATACAP_GRANT_BYTES    DataCap to grant Client contract (default: 1000000000)
+  DATACAP_GRANT_BYTES    DataCap to grant DataCapEvidenceAdapter (default: 1000000000)
   REGISTER_LOTUS_MINER   Register lotus-miner in SPRegistry (default: false)
   ENV_FILE               Output .env path (default: <tooling>/.env)
 EOF
@@ -169,6 +173,31 @@ eth_to_filecoin() {
     | jq -r '.result // empty'
 }
 
+# True if Lotus knows this address as an on-chain actor.
+fil_actor_exists() {
+  local addr="$1"
+  lotus state get-actor "$addr" >/dev/null 2>&1
+}
+
+# Ensure a Filecoin address exists (create via funding if missing). Needed after
+# chain reset when --from-env reuses an SP org eth key whose t410 actor is gone.
+ensure_fil_actor_funded() {
+  local addr="$1"
+  local amount="${2:-$ORG_FUND_AMOUNT}"
+  local default_wallet fund_out fund_cid
+  if fil_actor_exists "$addr"; then
+    log "Filecoin actor ${addr} already exists"
+    return 0
+  fi
+  default_wallet="$(lotus wallet default | tr -d '[:space:]')"
+  log "Filecoin actor ${addr} missing — funding ${amount} FIL from ${default_wallet} to create it"
+  fund_out="$(lotus send --from "$default_wallet" "$addr" "$amount")"
+  fund_cid="$(printf '%s\n' "$fund_out" | awk '/^bafy/{print $1}' | tail -n1 | tr -d '[:space:]')"
+  [[ -n "$fund_cid" ]] || fund_cid="$(printf '%s\n' "$fund_out" | tail -n1 | tr -d '[:space:]')"
+  wait_msg_required "$fund_cid"
+  fil_actor_exists "$addr" || die "actor ${addr} still missing after funding"
+}
+
 # Returns remaining DataCap bytes, or empty if not a verified client.
 client_datacap_bytes() {
   local addr="$1"
@@ -222,37 +251,64 @@ curl -sf -m 5 -X POST "$RPC_URL" \
 
 require_file "$DEPLOYMENT_JSON"
 
-POREP_MARKET="$(jq -r '.PoRepMarket.proxy // empty' "$DEPLOYMENT_JSON")"
-FILECOIN_PAY="$(jq -r '.FilecoinPay // empty' "$DEPLOYMENT_JSON")"
-SP_REGISTRY="$(jq -r '.SPRegistry.proxy // empty' "$DEPLOYMENT_JSON")"
-CLIENT_CONTRACT="$(jq -r '.Client.proxy // empty' "$DEPLOYMENT_JSON")"
-META_ALLOCATOR="$(jq -r '.MetaAllocator // empty' "$DEPLOYMENT_JSON")"
-[[ -n "$POREP_MARKET" && "$POREP_MARKET" != null ]] || die "PoRepMarket.proxy missing from ${DEPLOYMENT_JSON}"
-[[ -n "$FILECOIN_PAY" && "$FILECOIN_PAY" != null ]] || die "FilecoinPay missing from ${DEPLOYMENT_JSON}"
-[[ -n "$SP_REGISTRY" && "$SP_REGISTRY" != null ]] || die "SPRegistry.proxy missing from ${DEPLOYMENT_JSON}"
-[[ -n "$CLIENT_CONTRACT" && "$CLIENT_CONTRACT" != null ]] || die "Client.proxy missing from ${DEPLOYMENT_JSON}"
-[[ -n "$META_ALLOCATOR" && "$META_ALLOCATOR" != null ]] || die "MetaAllocator missing from ${DEPLOYMENT_JSON}"
+# V2 manifest: contracts.* and externalDependencies.* (see Deploy.s.sol)
+POREP_MARKET="$(jq -r '.contracts.PoRepMarket.proxy // empty' "$DEPLOYMENT_JSON")"
+FILECOIN_PAY="$(jq -r '.externalDependencies.FilecoinPay // empty' "$DEPLOYMENT_JSON")"
+SP_REGISTRY="$(jq -r '.contracts.SPRegistry.proxy // empty' "$DEPLOYMENT_JSON")"
+EVIDENCE_ADAPTER="$(jq -r '.contracts.DataCapEvidenceAdapter.proxy // empty' "$DEPLOYMENT_JSON")"
+META_ALLOCATOR="$(jq -r '.externalDependencies.MetaAllocator // empty' "$DEPLOYMENT_JSON")"
+[[ -n "$POREP_MARKET" && "$POREP_MARKET" != null ]] || die "contracts.PoRepMarket.proxy missing from ${DEPLOYMENT_JSON}"
+[[ -n "$FILECOIN_PAY" && "$FILECOIN_PAY" != null ]] || die "externalDependencies.FilecoinPay missing from ${DEPLOYMENT_JSON}"
+[[ -n "$SP_REGISTRY" && "$SP_REGISTRY" != null ]] || die "contracts.SPRegistry.proxy missing from ${DEPLOYMENT_JSON}"
+[[ -n "$EVIDENCE_ADAPTER" && "$EVIDENCE_ADAPTER" != null ]] || die "contracts.DataCapEvidenceAdapter.proxy missing from ${DEPLOYMENT_JSON}"
+[[ -n "$META_ALLOCATOR" && "$META_ALLOCATOR" != null ]] || die "externalDependencies.MetaAllocator missing from ${DEPLOYMENT_JSON}"
 if [[ "$(contract_codesize "$META_ALLOCATOR")" -eq 0 ]]; then
   die "MetaAllocator ${META_ALLOCATOR} has no code (deployer EOA stub). Run just porep-market deploy first (NoOpMetaAllocator)."
 fi
-CLIENT_CONTRACT_T410="$(eth_to_filecoin "$CLIENT_CONTRACT")"
-[[ -n "$CLIENT_CONTRACT_T410" ]] || die "could not resolve Filecoin address for Client contract ${CLIENT_CONTRACT}"
-log "Client contract evm=${CLIENT_CONTRACT} fil=${CLIENT_CONTRACT_T410}"
+EVIDENCE_ADAPTER_T410="$(eth_to_filecoin "$EVIDENCE_ADAPTER")"
+[[ -n "$EVIDENCE_ADAPTER_T410" ]] || die "could not resolve Filecoin address for DataCapEvidenceAdapter ${EVIDENCE_ADAPTER}"
+log "DataCapEvidenceAdapter evm=${EVIDENCE_ADAPTER} fil=${EVIDENCE_ADAPTER_T410}"
 log "MetaAllocator ${META_ALLOCATOR} (codesize $(contract_codesize "$META_ALLOCATOR"))"
 
 if [[ "$FROM_ENV" == true ]]; then
   require_file "$ENV_FILE"
+  require_file "$DEPLOYER_KEY_FILE"
+  require_file "$CONTRACT_ADDRESSES_JSON"
   log "resuming from existing ${ENV_FILE}"
   RPC_URL="$(env_get RPC_URL || printf '%s' "$RPC_URL")"
-  ADMIN_PRIVATE_KEY="$(env_get ADMIN_PRIVATE_KEY)"
+  # Always use Curio deployer as ADMIN — it owns DEFAULT_ADMIN_ROLE on freshly
+  # deployed contracts. A stale ADMIN_PRIVATE_KEY from an older .env often has no
+  # FEVM actor / FIL and fails cast send with "actor not found".
+  ADMIN_PRIVATE_KEY="$(tr -d '[:space:]' < "$DEPLOYER_KEY_FILE")"
+  [[ "$ADMIN_PRIVATE_KEY" =~ ^0x[0-9a-fA-F]{64}$ ]] || die "invalid deployer private key in ${DEPLOYER_KEY_FILE}"
   ORG_PRIVATE_KEY="$(env_get SP_PRIVATE_KEY)"
   SP_ORGANIZATION="$(env_get SP_ORGANIZATION)"
-  [[ "$ADMIN_PRIVATE_KEY" =~ ^0x[0-9a-fA-F]{64}$ ]] || die "ADMIN_PRIVATE_KEY missing/invalid in ${ENV_FILE}"
   [[ "$ORG_PRIVATE_KEY" =~ ^0x[0-9a-fA-F]{64}$ ]] || die "SP_PRIVATE_KEY missing/invalid in ${ENV_FILE}"
   [[ "$SP_ORGANIZATION" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "SP_ORGANIZATION missing/invalid in ${ENV_FILE}"
   ORG_T410="$(eth_to_filecoin "$SP_ORGANIZATION")"
   [[ -n "$ORG_T410" ]] || die "could not resolve Filecoin address for ${SP_ORGANIZATION}"
   log "org t410=${ORG_T410} evm=${SP_ORGANIZATION}"
+  ensure_fil_actor_funded "$ORG_T410"
+
+  require_file "$DEVNET_INFO_JSON"
+  CLIENT_PRIVATE_KEY="$(jq -r '.info.users[0].private_key_hex // empty' "$DEVNET_INFO_JSON")"
+  CLIENT_ADDRESS="$(jq -r '.info.users[0].evm_addr // empty' "$DEVNET_INFO_JSON")"
+  [[ -n "$CLIENT_PRIVATE_KEY" && "$CLIENT_PRIVATE_KEY" != null ]] || die "USER_1 private key missing from ${DEVNET_INFO_JSON}"
+  [[ -n "$CLIENT_ADDRESS" && "$CLIENT_ADDRESS" != null ]] || die "USER_1 evm_addr missing from ${DEVNET_INFO_JSON}"
+  CLIENT_T410="$(eth_to_filecoin "$CLIENT_ADDRESS")"
+  [[ -n "$CLIENT_T410" ]] || die "could not resolve Filecoin address for CLIENT ${CLIENT_ADDRESS}"
+  ensure_fil_actor_funded "$CLIENT_T410"
+
+  USDC_TOKEN="$(jq -r '.contracts.usdfc // empty' "$CONTRACT_ADDRESSES_JSON")"
+  [[ -n "$USDC_TOKEN" && "$USDC_TOKEN" != null ]] || die "contracts.usdfc missing from ${CONTRACT_ADDRESSES_JSON}"
+  # Keep SP wallets; refresh admin/client + contract addresses after a re-deploy / chain reset.
+  set_env_key "$ENV_FILE" ADMIN_PRIVATE_KEY "$ADMIN_PRIVATE_KEY"
+  set_env_key "$ENV_FILE" CLIENT_PRIVATE_KEY "$CLIENT_PRIVATE_KEY"
+  set_env_key "$ENV_FILE" CLIENT_ADDRESS "$CLIENT_ADDRESS"
+  set_env_key "$ENV_FILE" POREP_MARKET "$POREP_MARKET"
+  set_env_key "$ENV_FILE" FILECOIN_PAY "$FILECOIN_PAY"
+  set_env_key "$ENV_FILE" USDC_TOKEN "$USDC_TOKEN"
+  log "synced ADMIN/CLIENT, POREP_MARKET=${POREP_MARKET}, FILECOIN_PAY=${FILECOIN_PAY}, USDC_TOKEN=${USDC_TOKEN}"
 else
   require_file "$DEPLOYER_KEY_FILE"
   require_file "$CONTRACT_ADDRESSES_JSON"
@@ -392,9 +448,9 @@ for miner in "${MINERS[@]}"; do
 done
 
 if [[ "$SKIP_REGISTER" != true ]]; then
-  # v1.2.0 / CLI-compatible ABI (8-arg). Caps: don't-care-friendly high values; price 0.
+  # V2 ABI: registerProviderFor(provider, organization, availableBytes, payee)
   [[ ${#REGISTER_MINERS[@]} -gt 0 ]] || die "no miners left to register (found ${MINERS[*]}; lotus-miner skipped?)"
-  log "registering miners on SPRegistry ${SP_REGISTRY} (v1 registerProviderFor ABI)"
+  log "registering miners on SPRegistry ${SP_REGISTRY} (V2 registerProviderFor ABI)"
   for miner in "${REGISTER_MINERS[@]}"; do
     pid="$(miner_id_num "$miner")"
     already="$(cast call "$SP_REGISTRY" "isProviderRegistered(uint64)(bool)" "$pid" --rpc-url "$RPC_URL" | tr -d '[:space:]')"
@@ -404,8 +460,46 @@ if [[ "$SKIP_REGISTER" != true ]]; then
     fi
     log "registerProviderFor provider=${pid} org=${SP_ORGANIZATION}"
     cast send "$SP_REGISTRY" \
-      "registerProviderFor(uint64,address,(uint16,uint16,uint16,uint8),uint256,uint256,address,uint32,uint32)" \
-      "$pid" "$SP_ORGANIZATION" "(10000,1000,100,100)" "$AVAILABLE_BYTES" 0 "$SP_ORGANIZATION" 1 1278 \
+      "registerProviderFor(uint64,address,uint256,address)" \
+      "$pid" "$SP_ORGANIZATION" "$AVAILABLE_BYTES" "$SP_ORGANIZATION" \
+      --private-key "$ADMIN_PRIVATE_KEY" \
+      --rpc-url "$RPC_URL" >/dev/null
+  done
+
+  # V2 matching needs an allowed payment token + at least one active offer.
+  token_allowed="$(
+    cast call "$SP_REGISTRY" "getPaymentTokenConfig(address)((bool,uint256))" "$USDC_TOKEN" \
+      --rpc-url "$RPC_URL" 2>/dev/null | awk -F'[, ]+' '{gsub(/[()]/,""); print $1; exit}'
+  )"
+  if [[ "$token_allowed" != "true" ]]; then
+    log "setPaymentToken ${USDC_TOKEN} allowed=true minPrice=0"
+    cast send "$SP_REGISTRY" \
+      "setPaymentToken(address,bool,uint256)" \
+      "$USDC_TOKEN" true 0 \
+      --private-key "$ADMIN_PRIVATE_KEY" \
+      --rpc-url "$RPC_URL" >/dev/null
+  else
+    log "payment token ${USDC_TOKEN} already allowed — skipping"
+  fi
+
+  for miner in "${REGISTER_MINERS[@]}"; do
+    pid="$(miner_id_num "$miner")"
+    offer_count="$(
+      cast call "$SP_REGISTRY" "getOffersByProvider(uint64)(uint256[])" "$pid" \
+        --rpc-url "$RPC_URL" 2>/dev/null | tr -d '[][:space:]'
+    )"
+    if [[ -n "$offer_count" ]]; then
+      log "provider ${pid} already has offer(s) — skipping createOffer"
+      continue
+    fi
+    log "createOffer provider=${pid} durationEpochs=${OFFER_MIN_DURATION_EPOCHS}..${OFFER_MAX_DURATION_EPOCHS} price=${OFFER_PRICE_PER_32GIB_PER_MONTH}"
+    # terms: (minSize, maxSize, minDurationEpochs, maxDurationEpochs); slis all 0 = don't-care
+    cast send "$SP_REGISTRY" \
+      "createOffer(uint64,(uint256,uint256,uint64,uint64),(uint16,uint64,uint16,uint8),(address,bool,uint256)[])" \
+      "$pid" \
+      "(0,0,${OFFER_MIN_DURATION_EPOCHS},${OFFER_MAX_DURATION_EPOCHS})" \
+      "(0,0,0,0)" \
+      "[(${USDC_TOKEN},true,${OFFER_PRICE_PER_32GIB_PER_MONTH})]" \
       --private-key "$ADMIN_PRIVATE_KEY" \
       --rpc-url "$RPC_URL" >/dev/null
   done
@@ -502,14 +596,14 @@ else
 fi
 
 if [[ "$SKIP_DATACAP" != true ]]; then
-  existing_dc="$(client_datacap_bytes "$CLIENT_CONTRACT_T410")"
+  existing_dc="$(client_datacap_bytes "$EVIDENCE_ADAPTER_T410")"
   if [[ -n "$existing_dc" && "$existing_dc" -gt 0 ]]; then
-    log "Client contract already has DataCap (${existing_dc} bytes) — skipping grant"
+    log "DataCapEvidenceAdapter already has DataCap (${existing_dc} bytes) — skipping grant"
   else
     NOTARY="$(pick_notary)"
     [[ -n "$NOTARY" ]] || die "no notary with allowance found (lotus filplus list-notaries)"
-    log "granting ${DATACAP_GRANT_BYTES} DataCap bytes to Client ${CLIENT_CONTRACT_T410} from notary ${NOTARY}"
-    GRANT_OUT="$(lotus filplus grant-datacap --from "$NOTARY" "$CLIENT_CONTRACT_T410" "$DATACAP_GRANT_BYTES" 2>&1)" \
+    log "granting ${DATACAP_GRANT_BYTES} DataCap bytes to DataCapEvidenceAdapter ${EVIDENCE_ADAPTER_T410} from notary ${NOTARY}"
+    GRANT_OUT="$(lotus filplus grant-datacap --from "$NOTARY" "$EVIDENCE_ADAPTER_T410" "$DATACAP_GRANT_BYTES" 2>&1)" \
       || die "grant-datacap failed: ${GRANT_OUT}"
     printf '%s\n' "$GRANT_OUT"
     GRANT_CID="$(extract_msg_cid "$GRANT_OUT")"
@@ -518,13 +612,13 @@ if [[ "$SKIP_DATACAP" != true ]]; then
         log "wait-msg timed out for ${GRANT_CID}; checking DataCap directly"
       fi
     fi
-    existing_dc="$(client_datacap_bytes "$CLIENT_CONTRACT_T410")"
+    existing_dc="$(client_datacap_bytes "$EVIDENCE_ADAPTER_T410")"
     [[ -n "$existing_dc" && "$existing_dc" -gt 0 ]] \
-      || die "Client contract still has no DataCap after grant (${CLIENT_CONTRACT_T410})"
-    log "Client DataCap now ${existing_dc} bytes"
+      || die "DataCapEvidenceAdapter still has no DataCap after grant (${EVIDENCE_ADAPTER_T410})"
+    log "DataCapEvidenceAdapter DataCap now ${existing_dc} bytes"
   fi
 else
-  log "skipping Client contract DataCap grant"
+  log "skipping DataCapEvidenceAdapter DataCap grant"
 fi
 
 cat <<EOF
@@ -536,7 +630,7 @@ Setup complete.
   SP org (0x)          ${SP_ORGANIZATION}
   PoRepMarket          ${POREP_MARKET}
   SPRegistry           ${SP_REGISTRY}
-  Client contract      ${CLIENT_CONTRACT} (${CLIENT_CONTRACT_T410})
+  Evidence adapter     ${EVIDENCE_ADAPTER} (${EVIDENCE_ADAPTER_T410})
   MetaAllocator        ${META_ALLOCATOR}
   miners registered    ${REGISTER_MINERS[*]}
   all miners seen      ${MINERS[*]}
@@ -544,9 +638,8 @@ Setup complete.
   Curio miner          ${CURIO_MINER_ID:-n/a}
 
 Notes:
-  - CLI ABIs may still lag the deployed contracts (register used cast).
   - Control addresses were waited on and isAuthorizedForProvider checked (unless --skip-control).
-  - Client contract DataCap was granted for make-allocations (unless --skip-datacap).
+  - DataCapEvidenceAdapter DataCap was granted for make-allocations (unless --skip-datacap).
   - MetaAllocator must be a contract (NoOpMetaAllocator from deploy.sh); EOA stubs break transfer.
   - Only Curio miners are registered by default so proposeDeal does not pick lotus-miner.
   - Org wallet is an *extra* control address; BLS worker stays WindowPoSt sender (eth-as-post freezes the chain at ~718).
