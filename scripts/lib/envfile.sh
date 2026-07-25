@@ -2,7 +2,9 @@
 # Compatible with macOS /bin/bash 3.2.
 
 # Usage: env_get KEY [file]
-# Prints value (quotes stripped, whitespace trimmed). Returns 1 if missing.
+# Prints value (quotes stripped, leading/trailing whitespace trimmed).
+# Internal spaces are preserved (needed for cron expressions, URLs, etc.).
+# Returns 1 if missing.
 env_get() {
   local key="$1"
   local file="${2:-${ENV_FILE:-}}"
@@ -16,7 +18,11 @@ env_get() {
   elif [[ "$val" =~ ^\'.*\'$ ]]; then
     val="${val:1:${#val}-2}"
   fi
-  printf '%s\n' "$(printf '%s' "$val" | tr -d ' \t\r\n')"
+  # Trim CR and leading/trailing space/tab only — do not delete internal spaces.
+  val="${val%$'\r'}"
+  val="${val#"${val%%[![:space:]]*}"}"
+  val="${val%"${val##*[![:space:]]}"}"
+  printf '%s\n' "$val"
 }
 
 # Usage: set_env_key KEY VALUE

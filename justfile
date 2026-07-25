@@ -1,30 +1,33 @@
-# Curio PoRep devnet task runner
+# Curio PoRep / FCSS-devnet task runner
 # Run `just` to see all available commands.
-# Submodule tasks: just curio … / porep-market … / tooling …
+# Submodule tasks: just curio … / porep-market … / tooling … / oracle …
 
 mod curio 'just/curio.just'
 mod porep-market 'just/porep-market.just'
 mod tooling 'just/tooling.just'
+mod oracle 'just/oracle.just'
 
 default:
     @just --list
 
-# Submodules + Curio patches/images + tooling venv
+# Submodules + Curio patches/images + tooling patches/venv + oracle patches
 init:
     git submodule update --init --recursive
     just curio init
     just tooling init
+    just oracle patch
 
-# Compose up + Curio config + porep deploy + SP wiring
+# Compose up + Curio config + porep deploy + SP wiring + oracle Postgres/schema
+# (oracle app is separate: just oracle start / just oracle up)
 up:
     just curio up
     just porep-market deploy
     just porep-market up
-
-logs:
-    just curio logs
+    just oracle init --force
+    ./scripts/oracle/up.sh
 
 down:
+    just oracle down
     just curio down
 
 # Flags go straight to the script. Example: just make-deal --deal-id 1

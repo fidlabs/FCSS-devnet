@@ -1,0 +1,103 @@
+diff --git a/src/jobs/sync-settlement-history-job.ts b/src/jobs/sync-settlement-history-job.ts
+index bf09cb6..53dbfd4 100644
+--- a/src/jobs/sync-settlement-history-job.ts
++++ b/src/jobs/sync-settlement-history-job.ts
+@@ -11,25 +11,69 @@ const settlementHistorySyncLogger = baseLogger.child(
+   { msgPrefix: "[Settlement History Sync Job] " },
+ );
+ 
+-const FILECOIN_GENESIS_TIMESTAMP_SECONDS = (() => {
++const FILECOIN_EPOCH_DURATION_SECONDS = 30n;
++
++let cachedGenesisTimestampSeconds: bigint | null = null;
++
++async function resolveGenesisTimestampSeconds(): Promise<bigint> {
++  if (cachedGenesisTimestampSeconds !== null) {
++    return cachedGenesisTimestampSeconds;
++  }
++
+   switch (Number(SERVICE_CONFIG.CHAIN_ID)) {
+     case 314:
+-      return 1598306400n;
++      cachedGenesisTimestampSeconds = 1598306400n;
++      break;
+     case 314159:
+-      return 1667326380n;
++      cachedGenesisTimestampSeconds = 1667326380n;
++      break;
++    case 31415926: {
++      // Local Curio / Filecoin DevChain — genesis is set when the net starts.
++      const response = await fetch(SERVICE_CONFIG.RPC_URL, {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify({
++          jsonrpc: "2.0",
++          method: "Filecoin.ChainGetGenesis",
++          params: [],
++          id: 1,
++        }),
++      });
++      if (!response.ok) {
++        throw new Error(
++          `Filecoin.ChainGetGenesis failed: HTTP ${response.status}`,
++        );
++      }
++      const payload = (await response.json()) as {
++        result?: { Blocks?: Array<{ Timestamp?: number }> };
++        error?: unknown;
++      };
++      if (payload.error) {
++        throw new Error(
++          `Filecoin.ChainGetGenesis RPC error: ${JSON.stringify(payload.error)}`,
++        );
++      }
++      const timestamp = payload.result?.Blocks?.[0]?.Timestamp;
++      if (typeof timestamp !== "number") {
++        throw new Error(
++          "Filecoin.ChainGetGenesis returned no genesis block Timestamp",
++        );
++      }
++      cachedGenesisTimestampSeconds = BigInt(timestamp);
++      break;
++    }
+     default:
+       throw new Error(
+         `Unsupported CHAIN_ID for epoch->date conversion: ${SERVICE_CONFIG.CHAIN_ID}`,
+       );
+   }
+-})();
+ 
+-const FILECOIN_EPOCH_DURATION_SECONDS = 30n;
++  return cachedGenesisTimestampSeconds;
++}
+ 
+-function filecoinEpochToDate(epoch: bigint) {
++function filecoinEpochToDate(epoch: bigint, genesisTimestampSeconds: bigint) {
+   const timestampSeconds =
+-    epoch * FILECOIN_EPOCH_DURATION_SECONDS +
+-    FILECOIN_GENESIS_TIMESTAMP_SECONDS;
++    epoch * FILECOIN_EPOCH_DURATION_SECONDS + genesisTimestampSeconds;
+ 
+   return new Date(Number(timestampSeconds) * 1000);
+ }
+@@ -53,6 +97,8 @@ export async function syncSettlementHistoryFromCdp() {
+     `Found ${completedDeals.length} completed deals to sync settlement history`,
+   );
+ 
++  const genesisTimestampSeconds = await resolveGenesisTimestampSeconds();
++
+   for (const deal of completedDeals) {
+     try {
+       settlementHistorySyncLogger.info(
+@@ -62,7 +108,10 @@ export async function syncSettlementHistoryFromCdp() {
+       const rail = await getFilecoinPayRailFromCdp(deal.railId);
+ 
+       const settledUpToFromCdp = BigInt(rail.settledUpTo);
+-      const lastSettledUpFromCdpDate = filecoinEpochToDate(settledUpToFromCdp);
++      const lastSettledUpFromCdpDate = filecoinEpochToDate(
++        settledUpToFromCdp,
++        genesisTimestampSeconds,
++      );
+ 
+       const lastSettlementAt = deal.settlement_history[0]?.settlementAt
+         ? deal.settlement_history[0].settlementAt

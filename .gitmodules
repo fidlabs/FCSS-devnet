@@ -10,3 +10,8 @@
 	path = extern/filecoin-porep-market-tooling
 	url = https://github.com/fidlabs/filecoin-porep-market-tooling.git
 	ignore = dirty
+[submodule "extern/filecoin-oracle-service"]
+	path = extern/filecoin-oracle-service
+	url = https://github.com/fidlabs/filecoin-oracle-service.git
+	branch = v2
+	ignore = dirty

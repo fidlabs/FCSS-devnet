@@ -17,6 +17,7 @@ _POREP_SCRIPTS_DIR="$(cd "${_POREP_LIB_DIR}/.." && pwd)"
 : "${CURIO_DIR:=${REPO_ROOT}/extern/curio}"
 : "${POREP_MARKET_DIR:=${REPO_ROOT}/extern/porep-market}"
 : "${TOOLING_DIR:=${REPO_ROOT}/extern/filecoin-porep-market-tooling}"
+: "${ORACLE_DIR:=${REPO_ROOT}/extern/filecoin-oracle-service}"
 : "${CURIO_DOCKER_DIR:=${CURIO_DIR}/docker}"
 : "${CONTRACTS_DIR:=${CURIO_CONTRACTS_DIR:-${CURIO_DOCKER_DIR}/data/contracts}}"
 : "${CURIO_CONTRACTS_DIR:=${CONTRACTS_DIR}}"
@@ -52,17 +53,19 @@ require_container() {
 }
 
 # Reset a submodule working tree to the gitlink commit and apply *.patch files.
-# Usage: apply_patches TARGET_DIR PATCH_DIR LABEL
+# Usage: apply_patches TARGET_DIR PATCH_DIR LABEL [git_clean_extra_args...]
+# Extra args are passed to `git clean -fd` (e.g. -e .env -e node_modules).
 apply_patches() {
   local target_dir="$1" patch_dir="$2" label="$3"
   local patches patch
+  shift 3
 
   [[ -d "$target_dir" ]] || die "${label} submodule missing at ${target_dir}"
   [[ -d "$patch_dir" ]] || die "missing patch dir ${patch_dir}"
 
   log "resetting ${label} working tree to pinned submodule commit"
   git -C "$target_dir" reset --hard HEAD
-  git -C "$target_dir" clean -fd
+  git -C "$target_dir" clean -fd "$@"
 
   log "applying ${label} patches from ${patch_dir#"$REPO_ROOT"/}"
   shopt -s nullglob

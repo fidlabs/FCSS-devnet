@@ -10,4 +10,6 @@ Unified diffs applied by [`scripts/curio/init.sh`](../../scripts/curio/init.sh) 
 | `0004-deps-mk-skip-submodule-init.patch` | Same for `make deps` (`build/.update-modules`) |
 | `0005-build-mk-git-describe-fallback.patch` | Soft-fail `git log` for `CurrentCommit` when nested `.git` is invalid in-image |
 
+These patches are **environmental only** (nested-submodule docker build, host reachability, local UI edge cases). They are **not** suitable to push upstream to Curio.
+
 Post-bootstrap Curio config lives in this repo as [`scripts/curio/up.sh`](../../scripts/curio/up.sh), not as a Curio-tree patch.

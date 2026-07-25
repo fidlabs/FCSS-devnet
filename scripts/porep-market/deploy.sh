@@ -3,9 +3,11 @@
 #   1. write porep-market .env from Curio contract artifacts (gen-env.sh)
 #   2. deploy NoOp MetaAllocator (DataCapEvidenceAdapter.transfer needs a contract)
 #   3. forge script Deploy.s.sol → deployments/devnet/latest.json
+#   4. deploy PoRepMarketViewHelper(market) and record it in latest.json
 #
 # porep-market main only ships calibnet/mainnet via `just deploy`; local FEVM uses
 # the same Deploy.s.sol entrypoint with unprefixed env vars (see gen-env.sh).
+# ViewHelper is not part of Deploy.s.sol — oracle getDealViews needs it separately.
 #
 # Prerequisites: docker lotus up, cast, jq, forge
 #
@@ -59,6 +61,104 @@ deploy_noop_meta_allocator() {
   printf '%s\n' "$deployed"
 }
 
+# Deploy plain PoRepMarketViewHelper(market). Logs to stderr; prints address on stdout.
+deploy_porep_market_view_helper() {
+  local pk="$1"
+  local market="$2"
+  local rpc="$3"
+  local out deployed
+
+  log "deploying PoRepMarketViewHelper(poRepMarket=${market})" >&2
+  out="$(
+    cd "$POREP_MARKET_DIR"
+    # --constructor-args must be last: forge treats following tokens as ctor args.
+    forge create src/helpers/PoRepMarketViewHelper.sol:PoRepMarketViewHelper \
+      --broadcast \
+      --rpc-url "$rpc" \
+      --private-key "$pk" \
+      --priority-gas-price 200000 \
+      --gas-price 1000000000 \
+      --json \
+      --constructor-args "$market" 2>&1
+  )" || die "PoRepMarketViewHelper deploy failed: ${out}"
+
+  deployed="$(printf '%s\n' "$out" | jq -r 'if type=="array" then .[-1].deployedTo // .[-1].contractAddress // empty else .deployedTo // .contractAddress // empty end' 2>/dev/null | tr -d '[:space:]')"
+  if [[ -z "$deployed" || "$deployed" == "null" ]]; then
+    deployed="$(printf '%s\n' "$out" | awk '/Deployed to:/{print $NF; exit}' | tr -d '[:space:]')"
+  fi
+  if [[ -z "$deployed" || "$deployed" == "null" ]]; then
+    deployed="$(printf '%s\n' "$out" | jq -r '.. | objects | .deployedTo // .contractAddress // empty' 2>/dev/null | grep -E '^0x[0-9a-fA-F]{40}$' | tail -n1 || true)"
+  fi
+  [[ "$deployed" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "could not parse PoRepMarketViewHelper address from: ${out}"
+  [[ "$(contract_codesize "$deployed")" -gt 0 ]] || die "PoRepMarketViewHelper at ${deployed} has no code"
+  printf '%s\n' "$deployed"
+}
+
+# Deploy PoRepMarketClaimInspector(adapter, market).
+deploy_porep_market_claim_inspector() {
+  local pk="$1"
+  local adapter="$2"
+  local market="$3"
+  local rpc="$4"
+  local out deployed
+
+  log "deploying PoRepMarketClaimInspector(adapter=${adapter}, market=${market})" >&2
+  out="$(
+    cd "$POREP_MARKET_DIR"
+    forge create src/helpers/PoRepMarketClaimInspector.sol:PoRepMarketClaimInspector \
+      --broadcast \
+      --rpc-url "$rpc" \
+      --private-key "$pk" \
+      --priority-gas-price 200000 \
+      --gas-price 1000000000 \
+      --json \
+      --constructor-args "$adapter" "$market" 2>&1
+  )" || die "PoRepMarketClaimInspector deploy failed: ${out}"
+
+  deployed="$(printf '%s\n' "$out" | jq -r 'if type=="array" then .[-1].deployedTo // .[-1].contractAddress // empty else .deployedTo // .contractAddress // empty end' 2>/dev/null | tr -d '[:space:]')"
+  if [[ -z "$deployed" || "$deployed" == "null" ]]; then
+    deployed="$(printf '%s\n' "$out" | awk '/Deployed to:/{print $NF; exit}' | tr -d '[:space:]')"
+  fi
+  if [[ -z "$deployed" || "$deployed" == "null" ]]; then
+    deployed="$(printf '%s\n' "$out" | jq -r '.. | objects | .deployedTo // .contractAddress // empty' 2>/dev/null | grep -E '^0x[0-9a-fA-F]{40}$' | tail -n1 || true)"
+  fi
+  [[ "$deployed" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "could not parse PoRepMarketClaimInspector address from: ${out}"
+  [[ "$(contract_codesize "$deployed")" -gt 0 ]] || die "PoRepMarketClaimInspector at ${deployed} has no code"
+  printf '%s\n' "$deployed"
+}
+
+# Deploy PoRepMarketSectorStatusInspector(market).
+deploy_porep_market_sector_status_inspector() {
+  local pk="$1"
+  local market="$2"
+  local rpc="$3"
+  local out deployed
+
+  log "deploying PoRepMarketSectorStatusInspector(poRepMarket=${market})" >&2
+  out="$(
+    cd "$POREP_MARKET_DIR"
+    forge create src/helpers/PoRepMarketSectorStatusInspector.sol:PoRepMarketSectorStatusInspector \
+      --broadcast \
+      --rpc-url "$rpc" \
+      --private-key "$pk" \
+      --priority-gas-price 200000 \
+      --gas-price 1000000000 \
+      --json \
+      --constructor-args "$market" 2>&1
+  )" || die "PoRepMarketSectorStatusInspector deploy failed: ${out}"
+
+  deployed="$(printf '%s\n' "$out" | jq -r 'if type=="array" then .[-1].deployedTo // .[-1].contractAddress // empty else .deployedTo // .contractAddress // empty end' 2>/dev/null | tr -d '[:space:]')"
+  if [[ -z "$deployed" || "$deployed" == "null" ]]; then
+    deployed="$(printf '%s\n' "$out" | awk '/Deployed to:/{print $NF; exit}' | tr -d '[:space:]')"
+  fi
+  if [[ -z "$deployed" || "$deployed" == "null" ]]; then
+    deployed="$(printf '%s\n' "$out" | jq -r '.. | objects | .deployedTo // .contractAddress // empty' 2>/dev/null | grep -E '^0x[0-9a-fA-F]{40}$' | tail -n1 || true)"
+  fi
+  [[ "$deployed" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "could not parse PoRepMarketSectorStatusInspector address from: ${out}"
+  [[ "$(contract_codesize "$deployed")" -gt 0 ]] || die "PoRepMarketSectorStatusInspector at ${deployed} has no code"
+  printf '%s\n' "$deployed"
+}
+
 env_get_file() {
   local file="$1" key="$2"
   awk -F= -v k="$key" '
@@ -70,6 +170,67 @@ env_get_file() {
     }
   ' "$file"
 }
+
+record_helper_in_manifest() {
+  local name="$1"
+  local artifact="$2"
+  local addr="$3"
+  local tmp
+  tmp="$(mktemp)"
+  jq --arg name "$name" --arg artifact "$artifact" --arg addr "$addr" '
+    .contracts[$name] = {
+      artifact: $artifact,
+      address: $addr,
+      kind: "implementation"
+    }
+  ' "$DEPLOYMENT_JSON" >"$tmp"
+  mv "$tmp" "$DEPLOYMENT_JSON"
+}
+
+# Deploy ViewHelper + ClaimInspector + SectorStatusInspector; update latest.json.
+deploy_and_record_helpers() {
+  local pk="$1"
+  local market="$2"
+  local adapter="$3"
+  local rpc="$4"
+  local view_helper claim_inspector sector_inspector
+
+  view_helper="$(deploy_porep_market_view_helper "$pk" "$market" "$rpc" | tr -d '[:space:]')"
+  [[ "$view_helper" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "invalid PoRepMarketViewHelper: '${view_helper}'"
+  record_helper_in_manifest PoRepMarketViewHelper \
+    "src/helpers/PoRepMarketViewHelper.sol:PoRepMarketViewHelper" "$view_helper"
+  log "PoRepMarketViewHelper=${view_helper}"
+
+  claim_inspector="$(deploy_porep_market_claim_inspector "$pk" "$adapter" "$market" "$rpc" | tr -d '[:space:]')"
+  [[ "$claim_inspector" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "invalid PoRepMarketClaimInspector: '${claim_inspector}'"
+  record_helper_in_manifest PoRepMarketClaimInspector \
+    "src/helpers/PoRepMarketClaimInspector.sol:PoRepMarketClaimInspector" "$claim_inspector"
+  log "PoRepMarketClaimInspector=${claim_inspector}"
+
+  sector_inspector="$(deploy_porep_market_sector_status_inspector "$pk" "$market" "$rpc" | tr -d '[:space:]')"
+  [[ "$sector_inspector" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "invalid PoRepMarketSectorStatusInspector: '${sector_inspector}'"
+  record_helper_in_manifest PoRepMarketSectorStatusInspector \
+    "src/helpers/PoRepMarketSectorStatusInspector.sol:PoRepMarketSectorStatusInspector" "$sector_inspector"
+  log "PoRepMarketSectorStatusInspector=${sector_inspector}"
+}
+
+HELPERS_ONLY=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --view-helper-only|--helpers-only) HELPERS_ONLY=true; shift ;;
+    -h|--help)
+      cat <<'EOF'
+Usage: deploy.sh [--helpers-only]
+
+  (default)          Full V2 deploy + ViewHelper + ClaimInspector + SectorStatusInspector
+  --helpers-only     Deploy helpers against existing latest.json market/adapter only
+                     (alias: --view-helper-only)
+EOF
+      exit 0
+      ;;
+    *) die "unknown option: $1 (try --help)" ;;
+  esac
+done
 
 require_cmd docker
 require_cmd cast
@@ -97,6 +258,26 @@ curl -sf -m 5 -X POST "$RPC_URL" \
 require_file "$DEPLOYER_KEY_FILE"
 ADMIN_PRIVATE_KEY="$(tr -d '[:space:]' < "$DEPLOYER_KEY_FILE")"
 [[ "$ADMIN_PRIVATE_KEY" =~ ^0x[0-9a-fA-F]{64}$ ]] || die "invalid deployer private key in ${DEPLOYER_KEY_FILE}"
+
+if [[ "$HELPERS_ONLY" == true ]]; then
+  require_file "$DEPLOYMENT_JSON"
+  require_file "${POREP_MARKET_DIR}/.env"
+  PRIVATE_KEY_TEST="$(env_get_file "${POREP_MARKET_DIR}/.env" PRIVATE_KEY_TEST)"
+  RPC_TEST="$(env_get_file "${POREP_MARKET_DIR}/.env" RPC_TEST)"
+  [[ "$RPC_TEST" =~ ^https?:// ]] || RPC_TEST="$RPC_URL"
+  [[ -n "$PRIVATE_KEY_TEST" ]] || PRIVATE_KEY_TEST="$ADMIN_PRIVATE_KEY"
+
+  POREP_MARKET_PROXY="$(jq -r '.contracts.PoRepMarket.proxy // empty' "$DEPLOYMENT_JSON")"
+  DATACAP_ADAPTER="$(jq -r '.contracts.DataCapEvidenceAdapter.proxy // empty' "$DEPLOYMENT_JSON")"
+  [[ "$POREP_MARKET_PROXY" =~ ^0x[0-9a-fA-F]{40}$ ]] \
+    || die "missing contracts.PoRepMarket.proxy in ${DEPLOYMENT_JSON}"
+  [[ "$DATACAP_ADAPTER" =~ ^0x[0-9a-fA-F]{40}$ ]] \
+    || die "missing contracts.DataCapEvidenceAdapter.proxy in ${DEPLOYMENT_JSON}"
+
+  deploy_and_record_helpers "$PRIVATE_KEY_TEST" "$POREP_MARKET_PROXY" "$DATACAP_ADAPTER" "$RPC_TEST"
+  log "done — helpers recorded in ${DEPLOYMENT_JSON}"
+  exit 0
+fi
 
 POREP_MARKET_DIR="$POREP_MARKET_DIR" "${SCRIPT_DIR}/gen-env.sh" --out "${POREP_MARKET_DIR}/.env"
 require_file "${POREP_MARKET_DIR}/.env"
@@ -159,4 +340,14 @@ jq --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   '.result | .status="finalized" | .finalizedAt=$at' "$PENDING" >"$DEPLOYMENT_JSON"
 
 require_file "$DEPLOYMENT_JSON"
+
+POREP_MARKET_PROXY="$(jq -r '.contracts.PoRepMarket.proxy // empty' "$DEPLOYMENT_JSON")"
+DATACAP_ADAPTER="$(jq -r '.contracts.DataCapEvidenceAdapter.proxy // empty' "$DEPLOYMENT_JSON")"
+[[ "$POREP_MARKET_PROXY" =~ ^0x[0-9a-fA-F]{40}$ ]] \
+  || die "missing contracts.PoRepMarket.proxy in ${DEPLOYMENT_JSON}"
+[[ "$DATACAP_ADAPTER" =~ ^0x[0-9a-fA-F]{40}$ ]] \
+  || die "missing contracts.DataCapEvidenceAdapter.proxy in ${DEPLOYMENT_JSON}"
+
+deploy_and_record_helpers "$PRIVATE_KEY_TEST" "$POREP_MARKET_PROXY" "$DATACAP_ADAPTER" "$RPC_TEST"
+
 log "done — porep-market deployed (${DEPLOYMENT_JSON})"

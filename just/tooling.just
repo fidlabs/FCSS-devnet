@@ -1,6 +1,15 @@
 # filecoin-porep-market-tooling submodule tasks
 set working-directory := ".."
 
+[private]
+default:
+    @just --list tooling
+
+# Reset tooling submodule and apply patches/tooling/*.patch
+patch:
+    ./scripts/tooling/patch.sh
+
+# Apply patches, then ensure Python venv
 init:
     ./scripts/tooling/init.sh
 

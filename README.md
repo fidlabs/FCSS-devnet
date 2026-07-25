@@ -8,7 +8,7 @@ This repo targets **PoRep Market V2 contracts** only (`extern/porep-market` on `
 
 The resulting stack is suitable for testing [`fidlabs/large-paid-retrievals`](https://github.com/fidlabs/large-paid-retrievals) (`sp-proxy` + `retrieval-client` over MPP / Filecoin Pay). See that project’s README for how to run retrievals against this devnet.
 
-Pinned submodule versions: **Curio v1.28.2**, **porep-market** (`main` / **V2**), **filecoin-porep-market-tooling** (`feature-v2-adjust-contracts`).
+Pinned submodule versions: **Curio v1.28.2**, **porep-market** (`main` / **V2**), **filecoin-porep-market-tooling** (`feature-v2-adjust-contracts`), **filecoin-oracle-service** (`v2`).
 
 ## PoRep Market V2
 
@@ -17,8 +17,8 @@ Pinned submodule versions: **Curio v1.28.2**, **porep-market** (`main` / **V2**)
 | Deploy | `forge script Deploy.s.sol` → `extern/porep-market/deployments/devnet/latest.json` (needs forge libs under `lib/`, from `just init`) |
 | Market | `PoRepMarket` proxy (UUPS); deals via `proposeDeal` → accept (if still `PROPOSED`) → init rail |
 | Registry | `SPRegistry` — `registerProviderFor`, `setPaymentToken`, `createOffer` (offer price defaults to `1`; contract rejects `0`) |
-| Evidence | `DataCapEvidenceAdapter` — `submitDataCapBatch` + `finishDataCapPosting` (DataCap is granted to the adapter, not a V1 Client) |
-| Tooling | CLI on `feature-v2-adjust-contracts` for propose → allocate → claim |
+| Evidence | `DataCapEvidenceAdapter` — `submitDataCapBatch` + `finishDataCapPosting`, then after Curio/VerifReg claims: `PoRepMarket.submitEvidenceBatch` (moves adapter `allocationIds` → `claimIds`) |
+| Tooling | CLI on `feature-v2-adjust-contracts` for propose → allocate → claim; `admin submit-evidence` for `submitEvidenceBatch` |
 | Deal states | `PROPOSED` → `ACCEPTED` → `ACTIVE` → `FINALIZED` (no V1 `COMPLETED`; DataCap posting finishes while the deal is still `ACCEPTED`) |
 
 Orchestration: [`scripts/porep-market/deploy.sh`](scripts/porep-market/deploy.sh), [`up.sh`](scripts/porep-market/up.sh), [`gen-env.sh`](scripts/porep-market/gen-env.sh), and [`scripts/tooling/make-deal.sh`](scripts/tooling/make-deal.sh). After a chain reset with existing wallets, refresh wiring with `just porep-market up --from-env`.
@@ -29,23 +29,24 @@ Orchestration: [`scripts/porep-market/deploy.sh`](scripts/porep-market/deploy.sh
 |------------|------|
 | [`curio`](extern/curio) (git submodule, **v1.28.2**) | Lotus + Curio docker stack |
 | [`porep-market`](extern/porep-market) (git submodule, **main** / **V2**) | PoRep Market V2, SPRegistry, DataCapEvidenceAdapter |
-| [`filecoin-porep-market-tooling`](extern/filecoin-porep-market-tooling) (git submodule, **feature-v2-adjust-contracts**) | V2 client/SP CLI for propose → allocate → claim |
+| [`filecoin-porep-market-tooling`](extern/filecoin-porep-market-tooling) (git submodule, **feature-v2-adjust-contracts**) | V2 client/SP/admin CLI (propose → allocate → claim → `submit-evidence`) |
+| [`filecoin-oracle-service`](extern/filecoin-oracle-service) (git submodule, **v2**) | Oracle / settlement / SLI jobs against V2 market |
 | [`large-paid-retrievals`](https://github.com/fidlabs/large-paid-retrievals) | `sp-proxy` + `retrieval-client` (MPP / Filecoin Pay); test against this devnet |
 
-`curio`, `porep-market`, and `filecoin-porep-market-tooling` are vendored under [`extern/`](extern/) as git submodules.
+`curio`, `porep-market`, `filecoin-porep-market-tooling`, and `filecoin-oracle-service` are vendored under [`extern/`](extern/) as git submodules.
 
 ## Quick start
 
 ```bash
 git clone https://github.com/fidlabs/FCSS-devnet.git
 cd FCSS-devnet
-just init    # submodules (recursive), Curio patches/images, tooling venv
+just init    # submodules (recursive), Curio patches/images, tooling venv, oracle patches
 just up      # compose up + Curio config + porep V2 deploy + SP wiring
 # prepare + serve a deal manifest/pieces (e.g. Singularity — see below), then:
 just make-deal
 ```
 
-`just init` runs `git submodule update --init --recursive`, then `just curio init` and `just tooling init`. Recursive init is required for porep-market forge libs (`lib/fvm-solidity`, …). Set `SKIP_DOCKER=1` to skip the Curio image build; `SKIP_VENV=1` to skip the tooling venv.
+`just init` runs `git submodule update --init --recursive`, then `just curio init` and `just tooling init` (tooling patches + venv). Recursive init is required for porep-market forge libs (`lib/fvm-solidity`, …). Set `SKIP_DOCKER=1` to skip the Curio image build; `SKIP_VENV=1` to skip the tooling venv; `SKIP_PATCH=1` to skip tooling patch reset/apply.
 
 ## Just recipes
 
@@ -53,16 +54,33 @@ Root recipes compose submodule modules ([`just/`](just/)):
 
 | Recipe | Does |
 |--------|------|
-| `just init` | submodule update → `curio init` → `tooling init` |
-| `just up` | `curio up` → `porep-market deploy` (V2 forge) → `porep-market up` |
-| `just logs` / `just down` | Curio compose logs / tear down |
+| `just init` | submodule update → `curio init` → `tooling init` (incl. patches) → `oracle patch` |
+| `just up` | `curio up` → `porep-market deploy` → `porep-market up` → `oracle init` → oracle Postgres/schema |
+| `just down` | `oracle down` (Postgres compose) + `curio down` |
 | `just make-deal …` | tooling venv + V2 deal pipeline (flags go to the script) |
 
 Namespaced (same scripts):
 
 - `just curio init|up|cli|logs|down`
 - `just porep-market gen-env|deploy|up`
-- `just tooling init|make-deal`
+- `just tooling patch` — reset tooling submodule + apply [`patches/tooling/`](patches/tooling/)
+- `just tooling init|make-deal` — `init` applies tooling patches then creates the venv
+- `just oracle patch` — reset oracle submodule + apply [`patches/oracle/`](patches/oracle/)
+- `just oracle init` — write `extern/filecoin-oracle-service/.env` from V2 `latest.json` + Curio deployer (after `just up`; also re-applies patches)
+- `just oracle up` — Postgres + Prisma schema, then `npm run start` (foreground)
+- `just oracle start` — `npm run start` (foreground; requires `just oracle init` build)
+- `just oracle get-deals` — `curl` `GET /deals` (optional `--state` / `--page` / `--limit`)
+- `just oracle logs` — follow oracle `docker compose` logs
+- `just oracle down` — `docker compose down` for oracle Postgres
+
+Oracle cron schedules: edit `TRIGGER_*_CRON` / `SYNC_URL_FINDER_*` in `extern/filecoin-oracle-service/.env` (kept across `init --force`), or pass them when regenerating, e.g. `TRIGGER_SYNC_DEALS_JOB_INTERVAL_CRON='* * * * *' just oracle init --force`. Restart the oracle process after changing crons.
+
+Off-chain services **not** part of this local deployment for now: `CDP_SERVICE_URL` (settlement-history sync) and `URL_FINDER_SERVICE_URL` / `URL_FINDER_AUTH_TOKEN` (URL Finder SLI targets). Deal sync and `just oracle get-deals` do not need them; leave those env vars empty unless you point them at external services yourself.
+
+**TODO (push upstream):**
+
+- **Oracle** — local patches under [`patches/oracle/`](patches/oracle/): (1) `0001` settlement history genesis for Curio `CHAIN_ID=31415926`; (2) `0002` re-enable cron schedules; (3) `0003` call `getDealViews` on ViewHelper; (4) `0004` V2 ViewHelper ABI + deal-sync mapping (`proposedAtEpoch` on deal, no `timing` tuple); (5) `0005` skip claim inspector when address unset. Open PRs on oracle `v2` and drop the patches once merged. Local deploy ships ViewHelper via `just porep-market deploy` (or `--view-helper-only`).
+- **Tooling** — local patches under [`patches/tooling/`](patches/tooling/) (see that README): EthAddress zero-address fix; compose `get_deal_view` from market getters + V2 ABI (no on-market `getDealView`); `admin submit-evidence` for `submitEvidenceBatch`. Open PRs on tooling `feature-v2-adjust-contracts` (or successor) and drop the patches once merged. `make-deal` always runs submit-evidence after allocations complete (orchestration in this repo).
 
 ## Scripts
 
@@ -74,10 +92,17 @@ Shared helpers live in [`scripts/lib/`](scripts/lib/) (`common.sh`, `envfile.sh`
 | `scripts/curio/up.sh` | Post-bootstrap Curio config (SSRF, IPNI, WinningPoSt, control, escrow) |
 | `scripts/curio/cli.sh` | `CURIO_PATH` wrapper: `curio` inside the compose service |
 | `scripts/porep-market/gen-env.sh` | Write porep-market `.env` for V2 `Deploy.s.sol` + Curio artifacts |
-| `scripts/porep-market/deploy.sh` | NoOp MetaAllocator + V2 `forge script Deploy.s.sol` |
+| `scripts/porep-market/deploy.sh` | NoOp MetaAllocator + V2 `Deploy.s.sol` + helpers (ViewHelper, ClaimInspector, SectorStatusInspector) |
 | `scripts/porep-market/up.sh` | SP org + tooling `.env` + V2 register/offer + DataCap to adapter |
-| `scripts/tooling/init.sh` | Tooling Python venv |
-| `scripts/tooling/make-deal.sh` | V2 propose → accept → init rail → allocate → onboard → claim → add-url |
+| `scripts/tooling/patch.sh` | Reset tooling submodule + apply `patches/tooling/*.patch` |
+| `scripts/tooling/init.sh` | Tooling patches + Python venv |
+| `scripts/tooling/make-deal.sh` | V2 propose → accept → init → allocate → onboard → claim → add-url → wait allocations → `submit-evidence` → confirm claims |
+| `scripts/oracle/patch.sh` | Reset oracle submodule + apply `patches/oracle/*.patch` |
+| `scripts/oracle/init.sh` | Write oracle-service `.env`, then `npm ci` + `npm run build` |
+| `scripts/oracle/up.sh` | `docker compose up` for oracle Postgres, then `db-schema.sh` |
+| `scripts/oracle/db-schema.sh` | `npm ci` (if needed) + `prisma generate` + `prisma db push` (used by `up.sh`) |
+| `scripts/oracle/start.sh` | `npm run start` |
+| `scripts/oracle/get-deals.sh` | `curl` `GET /deals` against the local oracle API |
 
 Also: [`contracts/allocator/NoOpMetaAllocator.{sol,json}`](contracts/allocator/) (MetaAllocator stub so DataCapEvidenceAdapter can call `addVerifiedClient` on FEVM).
 
@@ -86,7 +111,8 @@ Also: [`contracts/allocator/NoOpMetaAllocator.{sol,json}`](contracts/allocator/)
 1. `just init`
 2. `just up`
 3. Prepare a deal dataset (e.g. with Singularity — below), then `just make-deal`
-4. Optional: test paid retrievals with [`large-paid-retrievals`](https://github.com/fidlabs/large-paid-retrievals) — see that project’s README
+4. Optional: `just oracle up` (Postgres + schema + `npm run start`), or `just oracle start` if DB is already up
+5. Optional: test paid retrievals with [`large-paid-retrievals`](https://github.com/fidlabs/large-paid-retrievals) — see that project’s README
 
 See each script’s header for flags and env overrides (`CURIO_DIR`, `POREP_MARKET_DIR`, `TOOLING_DIR`, `ENV_FILE`, `RPC_URL`, …).
 
@@ -302,9 +328,24 @@ cd FCSS-devnet   # or your local clone directory
 just make-deal
 # or: just make-deal --manifest-url http://127.0.0.1:8080/manifest.json
 # resume: just make-deal --deal-id 1
+# stop after Curio add-url (skip sealing wait / submit-evidence):
+just make-deal --deal-id 1 --no-wait-claims
 ```
 
-Pass flags directly to the script, e.g. `just make-deal --deal-id 1`. Optional overrides: `MANIFEST_URL`, `PIECE_BASE_URL`, `--deal-id`, `--wait-claims`, `--skip-onboard` (see `scripts/tooling/make-deal.sh --help`).
+Pass flags directly to the script, e.g. `just make-deal --deal-id 1`. Optional overrides: `MANIFEST_URL`, `PIECE_BASE_URL`, `--deal-id`, `--no-wait-claims`, `--skip-onboard` (see `scripts/tooling/make-deal.sh --help`).
+
+**Claims vs allocations:** Curio sealing creates VerifReg claims (same numeric IDs as the allocations). `sp get-claims` only shows IDs already stored on the `DataCapEvidenceAdapter` (`getClaimIds`). `make-deal` waits for Lotus allocations to clear, runs `admin submit-evidence`, then confirms claims via `sp get-claims`.
+
+```bash
+# default path (also used on resume):
+just make-deal --deal-id 1
+# manual equivalent after Curio has claimed on VerifReg:
+cd extern/filecoin-porep-market-tooling
+python porep_tooling_cli.py admin submit-evidence 1 --wait
+python porep_tooling_cli.py sp get-claims 1
+```
+
+`admin submit-evidence` needs `ADMIN_PRIVATE_KEY` (deployer / `DEFAULT_ADMIN_ROLE` or `POREP_SERVICE_ROLE`).
 
 ### Checklist when CommP / onboard fails
 
@@ -317,6 +358,7 @@ Pass flags directly to the script, e.g. `just make-deal --deal-id 1`. Optional o
 
 - Docker
 - `cast`, `jq`, `curl`; `just` + `forge` (Foundry) for V2 contract deploy
+- `npm` (Node.js 24+) for `just oracle up` and running filecoin-oracle-service
 - Recursive git submodules (`just init`) so porep-market forge libs exist under `extern/porep-market/lib/`
 - `aria2c` for `make-deal` onboard-data
 - Singularity CLI (`go install github.com/data-preservation-programs/singularity@latest`) for piece prep + content-provider

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Propose → accept → init → allocate → onboard-data → claim-allocations (curio) → add-url
+# → wait for Curio/VerifReg to finish allocations → admin submit-evidence → wait for claims
 # for a Singularity manifest already served locally
 # (default: http://127.0.0.1:8080/manifest.json).
 #
-# Exits once every unclaimed allocation has a Curio piece URL. On-chain claims /
-# sealing are left to Curio; poll with `sp get-claims` / `--wait-claims` if needed.
+# After piece URLs are attached, always polls until Lotus allocations clear, runs
+# `admin submit-evidence`, then confirms adapter claimIds (`sp get-claims`). Use
+# `--no-wait-claims` to exit after add-url instead.
 #
 # Prerequisites:
 #   - scripts/porep-market/up.sh completed (Curio SP registered, control addr, DataCap, MetaAllocator)
@@ -21,7 +23,7 @@
 #   just make-deal
 #   ./scripts/tooling/make-deal.sh --manifest-url http://127.0.0.1:8080/manifest.json
 #   ./scripts/tooling/make-deal.sh --deal-id 1          # resume incomplete deal
-#   ./scripts/tooling/make-deal.sh --wait-claims        # also poll until on-chain claims finish
+#   ./scripts/tooling/make-deal.sh --no-wait-claims     # stop after Curio add-url
 #   ./scripts/tooling/make-deal.sh --skip-onboard       # stop after make-allocations
 #   ./scripts/tooling/make-deal.sh --skip-claim         # onboard cars but do not claim into Curio
 #
@@ -65,8 +67,9 @@ PIECE_BASE_URL="${PIECE_BASE_URL:-http://host.docker.internal:7777/piece}"
 YUGABYTE_CONTAINER="${YUGABYTE_CONTAINER:-yugabyte}"
 SKIP_ONBOARD=false
 SKIP_CLAIM=false
-# Default: exit after Curio piece URLs are attached. Opt in with --wait-claims.
-WAIT_CLAIMS=false
+# Default: after add-url, wait for VerifReg allocations→claims, submit-evidence, confirm get-claims.
+# Opt out with --no-wait-claims.
+WAIT_CLAIMS=true
 YES=true
 
 usage() {
@@ -82,9 +85,9 @@ Options:
   --piece-base-url URL            Piece CAR base URL for Curio add-url (default: ${PIECE_BASE_URL})
   --skip-onboard                  Stop after make-allocations
   --skip-claim                    Skip claim-allocations / add-url (still onboard unless --skip-onboard)
-  --wait-claims                   Also poll until on-chain claims finish (default: exit after URLs)
-  --no-wait-claims                Explicit default: exit after add-url
-  --wait-claims-timeout N         Seconds to wait when --wait-claims (default: ${WAIT_CLAIMS_TIMEOUT:-1800})
+  --wait-claims                   Wait for allocations → submit-evidence → claims (default)
+  --no-wait-claims                Exit after Curio add-url (skip sealing wait / submit-evidence)
+  --wait-claims-timeout N         Seconds for allocation/claim wait (default: ${WAIT_CLAIMS_TIMEOUT:-1800})
   --interactive                   Do not pipe 'yes' into CLI confirms
   -h, --help                      Show this help
 
@@ -266,6 +269,39 @@ deal_claim_count() {
 deal_allocation_count() {
   local deal_id="$1"
   cli_json_retry sp get-allocations "$deal_id" | jq 'length'
+}
+
+# Adapter-tracked IDs (not Lotus-filtered). After Curio seals, VerifReg no longer
+# has allocations but the adapter still lists them until submitEvidenceBatch.
+deal_adapter_allocation_id_count() {
+  local deal_id="$1"
+  local adapter rpc
+  adapter="$(deal_view_jq "$deal_id" '.deal.evidence_adapter_address')"
+  [[ -n "$adapter" && "$adapter" != "null" ]] || { echo 0; return 0; }
+  rpc="$(env_get RPC_URL)"
+  # getAllocationIdsPerDeal(dealId, offset, limit) → (ids[], total); limit must be > 0
+  cast call "$adapter" \
+    "getAllocationIdsPerDeal(uint256,uint256,uint256)(uint64[],uint256)" \
+    "$deal_id" 0 1 \
+    --rpc-url "$rpc" 2>/dev/null \
+    | tail -n1 \
+    | tr -d '[:space:]' \
+    | grep -E '^[0-9]+$' || echo 0
+}
+
+deal_adapter_claim_id_count() {
+  local deal_id="$1"
+  local adapter rpc
+  adapter="$(deal_view_jq "$deal_id" '.deal.evidence_adapter_address')"
+  [[ -n "$adapter" && "$adapter" != "null" ]] || { echo 0; return 0; }
+  rpc="$(env_get RPC_URL)"
+  cast call "$adapter" \
+    "getClaimIds(uint256,uint256,uint256)(uint64[],uint256)" \
+    "$deal_id" 0 1 \
+    --rpc-url "$rpc" 2>/dev/null \
+    | tail -n1 \
+    | tr -d '[:space:]' \
+    | grep -E '^[0-9]+$' || echo 0
 }
 
 # Attach HTTP piece URLs to existing Curio offline DDOs so the seal pipeline can start.
@@ -706,21 +742,21 @@ init_deal() {
     || die "init-accepted-deals left rail_id=0 for deal ${deal_id} after ${attempts} attempts"
 }
 
-# Total pieces for a deal = still-unclaimed allocations + on-chain claims.
+# Total pieces = adapter allocationIds still pending evidence + adapter claimIds.
 deal_expected_piece_count() {
   local deal_id="$1"
-  local unclaimed claimed
-  unclaimed="$(deal_allocation_count "$deal_id")"
-  claimed="$(deal_claim_count "$deal_id")"
-  echo $((unclaimed + claimed))
+  local pending claimed
+  pending="$(deal_adapter_allocation_id_count "$deal_id")"
+  claimed="$(deal_adapter_claim_id_count "$deal_id")"
+  echo $((pending + claimed))
 }
 
 deal_is_fully_claimed() {
   local deal_id="$1"
-  local unclaimed claimed
-  unclaimed="$(deal_allocation_count "$deal_id")"
-  claimed="$(deal_claim_count "$deal_id")"
-  [[ "$unclaimed" -eq 0 && "$claimed" -gt 0 ]]
+  local pending claimed
+  pending="$(deal_adapter_allocation_id_count "$deal_id")"
+  claimed="$(deal_adapter_claim_id_count "$deal_id")"
+  [[ "$pending" -eq 0 && "$claimed" -gt 0 ]]
 }
 
 # Resume an incomplete deal for this manifest instead of proposing a duplicate.
@@ -755,6 +791,35 @@ onboard_cars_present() {
   [[ -n "$n" && "$n" -gt 0 && "$cars" -ge "$n" ]]
 }
 
+# True when every still-unclaimed Lotus allocation already has a Curio DDO row.
+curio_ddos_exist_for_unclaimed() {
+  local deal_id="$1"
+  local provider_num alloc_id uuid missing=0
+
+  provider_num="$(
+    deal_view_jq "$deal_id" '.deal.provider_id' | sed -E 's/^[tf]0*//'
+  )"
+  [[ -n "$provider_num" ]] || return 1
+
+  while IFS= read -r alloc_id || [[ -n "$alloc_id" ]]; do
+    alloc_id="$(printf '%s' "$alloc_id" | tr -d '[:space:]')"
+    [[ -n "$alloc_id" ]] || continue
+    uuid="$(
+      docker exec "$YUGABYTE_CONTAINER" bash -lc \
+        "ysqlsh -h yugabyte -p 5433 -U yugabyte -At -c \"SET search_path TO curio; SELECT uuid FROM market_direct_deals WHERE sp_id=${provider_num} AND allocation_id=${alloc_id} ORDER BY created_at DESC LIMIT 1;\"" \
+        </dev/null 2>/dev/null | tr -d '[:space:]'
+    )"
+    if [[ -z "$uuid" ]]; then
+      missing=$((missing + 1))
+    fi
+  done < <(
+    cli_json_retry sp get-allocations "$deal_id" \
+      | jq -r 'keys[]' \
+      | grep -E '^[0-9]+$' || true
+  )
+  [[ "$missing" -eq 0 ]]
+}
+
 # Ensure Curio has DDO rows + piece URLs for every still-unclaimed allocation.
 ensure_curio_ddos_and_urls() {
   local deal_id="$1"
@@ -767,10 +832,18 @@ ensure_curio_ddos_and_urls() {
       log "no unclaimed allocations — Curio DDO/add-url not needed"
       return 0
     fi
-    log "sp claim-allocations curio ${deal_id} (${unclaimed} unclaimed, attempt ${i}/${attempts})"
-    set +e
-    run_cli_retry sp claim-allocations curio "$deal_id"
-    set -e
+
+    # Prefer add-url only when DDOs already exist (resume / wait poll). Re-running
+    # `curio market ddo` then logs "A successful deal already exists" for each id.
+    if curio_ddos_exist_for_unclaimed "$deal_id"; then
+      log "Curio DDO rows already present for unclaimed allocations — skipping claim-allocations"
+    else
+      log "sp claim-allocations curio ${deal_id} (${unclaimed} unclaimed, attempt ${i}/${attempts})"
+      set +e
+      run_cli_retry sp claim-allocations curio "$deal_id"
+      set -e
+    fi
+
     set +e
     attach_curio_piece_urls "$deal_id"
     local arc=$?
@@ -778,37 +851,62 @@ ensure_curio_ddos_and_urls() {
     if [[ $arc -eq 0 ]]; then
       return 0
     fi
-    log "attach_curio_piece_urls incomplete (rc=${arc}); retrying claim+attach"
+    log "attach_curio_piece_urls incomplete (rc=${arc}); retrying"
     sleep 5
   done
   die "failed to attach Curio piece URLs for all unclaimed allocations of deal ${deal_id}"
 }
 
-# Poll until every deal piece has an on-chain claim (Curio seal + claim finished).
+# Wait until Lotus allocations are gone (Curio sealed / VerifReg claimed), then
+# PoRepMarket.submitEvidenceBatch, then confirm adapter claimIds (sp get-claims).
 wait_until_all_claimed() {
   local deal_id="$1"
   local expected="$2"
   local timeout_s="${3:-${WAIT_CLAIMS_TIMEOUT:-1800}}"
   local poll_s="${WAIT_CLAIMS_POLL:-15}"
-  local elapsed=0 claims unclaimed
+  local elapsed=0 claims pending lotus_unclaimed remaining_s
 
   [[ "$expected" -gt 0 ]] || die "expected piece count is 0 for deal ${deal_id}"
-  log "waiting up to ${timeout_s}s for ${expected} on-chain claim(s) on deal ${deal_id}"
+  log "waiting up to ${timeout_s}s: allocations complete → submit-evidence → claims on deal ${deal_id}"
 
+  claims="$(deal_adapter_claim_id_count "$deal_id")"
+  pending="$(deal_adapter_allocation_id_count "$deal_id")"
+  if [[ "$claims" -ge "$expected" && "$pending" -eq 0 ]]; then
+    log "all ${expected} piece(s) already recorded as adapter claims for deal ${deal_id}"
+    return 0
+  fi
+
+  # One soft heal up front (URLs only if DDOs exist; claim-allocations only if missing).
+  set +e
+  ensure_curio_ddos_and_urls "$deal_id" 2
+  set -e
+
+  # 1) Wait for Curio/VerifReg to finish allocations (Lotus no longer lists them).
+  # Do not re-run claim-allocations each poll — that floods "deal already exists".
   while [[ "$elapsed" -lt "$timeout_s" ]]; do
-    claims="$(deal_claim_count "$deal_id")"
-    unclaimed="$(deal_allocation_count "$deal_id")"
-    log "deal ${deal_id}: claims=${claims}/${expected} unclaimed=${unclaimed} (${elapsed}s/${timeout_s}s)"
+    lotus_unclaimed="$(deal_allocation_count "$deal_id")"
+    claims="$(deal_adapter_claim_id_count "$deal_id")"
+    pending="$(deal_adapter_allocation_id_count "$deal_id")"
+    log "deal ${deal_id}: waiting allocations complete — lotus_unclaimed=${lotus_unclaimed} adapter_pending=${pending} adapter_claims=${claims}/${expected} (${elapsed}s/${timeout_s}s)"
 
-    if [[ "$claims" -ge "$expected" && "$unclaimed" -eq 0 ]]; then
-      log "all ${expected} piece(s) claimed on-chain for deal ${deal_id}"
+    if [[ "$claims" -ge "$expected" && "$pending" -eq 0 ]]; then
+      log "all ${expected} piece(s) recorded as adapter claims for deal ${deal_id}"
       return 0
     fi
 
-    # Heal stuck offline DDOs while we wait (idempotent).
-    if [[ "$unclaimed" -gt 0 ]]; then
+    if [[ "$lotus_unclaimed" -eq 0 ]]; then
+      log "Lotus allocations cleared for deal ${deal_id} — ready for submit-evidence"
+      break
+    fi
+
+    # Soft heal: re-attach URLs if needed; skip claim-allocations when DDOs exist.
+    if [[ "$lotus_unclaimed" -gt 0 ]]; then
       set +e
-      ensure_curio_ddos_and_urls "$deal_id" 2
+      if curio_ddos_exist_for_unclaimed "$deal_id"; then
+        attach_curio_piece_urls "$deal_id"
+      else
+        ensure_curio_ddos_and_urls "$deal_id" 1
+      fi
       set -e
     fi
 
@@ -816,9 +914,29 @@ wait_until_all_claimed() {
     elapsed=$((elapsed + poll_s))
   done
 
-  claims="$(deal_claim_count "$deal_id")"
-  unclaimed="$(deal_allocation_count "$deal_id")"
-  die "timed out waiting for claims on deal ${deal_id}: claims=${claims}/${expected} unclaimed=${unclaimed}. Re-run: ./scripts/tooling/make-deal.sh --deal-id ${deal_id}"
+  remaining_s=$((timeout_s - elapsed))
+  if [[ "$remaining_s" -le 0 ]]; then
+    claims="$(deal_adapter_claim_id_count "$deal_id")"
+    pending="$(deal_adapter_allocation_id_count "$deal_id")"
+    die "timed out waiting for allocations to complete on deal ${deal_id}: adapter_claims=${claims}/${expected} adapter_pending=${pending}"
+  fi
+
+  # 2) submitEvidenceBatch until adapter allocationIds → claimIds.
+  pending="$(deal_adapter_allocation_id_count "$deal_id")"
+  if [[ "$pending" -gt 0 ]]; then
+    log "admin submit-evidence ${deal_id} --wait (timeout=${remaining_s}s, pending=${pending})"
+    run_cli admin submit-evidence "$deal_id" --wait --timeout "$remaining_s" --poll-interval "$poll_s"
+  fi
+
+  # 3) Confirm claims appear on the adapter / sp get-claims.
+  claims="$(deal_adapter_claim_id_count "$deal_id")"
+  pending="$(deal_adapter_allocation_id_count "$deal_id")"
+  if [[ "$claims" -ge "$expected" && "$pending" -eq 0 ]]; then
+    log "all ${expected} piece(s) recorded as adapter claims for deal ${deal_id}"
+    return 0
+  fi
+
+  die "submit-evidence did not finish deal ${deal_id}: adapter_claims=${claims}/${expected} adapter_pending=${pending}. Re-run: ./scripts/tooling/make-deal.sh --deal-id ${deal_id}"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -1040,20 +1158,25 @@ EXPECTED_PIECES="$(deal_expected_piece_count "$DEAL_ID")"
 CLAIM_COUNT="$(deal_claim_count "$DEAL_ID")"
 ALLOC_COUNT="$(deal_allocation_count "$DEAL_ID")"
 
-if [[ "$WAIT_CLAIMS" == true ]]; then
-  if [[ "$EXPECTED_PIECES" -eq 0 ]]; then
-    # Fully claimed already (unclaimed=0 and we had claims), or empty deal.
-    [[ "$CLAIM_COUNT" -gt 0 ]] || die "deal ${DEAL_ID} has no allocations or claims"
-    EXPECTED_PIECES="$CLAIM_COUNT"
-  fi
-  wait_until_all_claimed "$DEAL_ID" "$EXPECTED_PIECES" "$WAIT_CLAIMS_TIMEOUT"
-  CLAIM_COUNT="$(deal_claim_count "$DEAL_ID")"
-  log "on-chain claims:"
-  cli_json_retry sp get-claims "$DEAL_ID" | jq .
-  log "done. deal_id=${DEAL_ID} state=${state} claims=${CLAIM_COUNT}/${EXPECTED_PIECES} onboard_dir=${ONBOARD_DIR}"
-else
-  log "all unclaimed allocations have Curio piece URLs — not waiting for on-chain claims"
-  log "poll later: ${CLI[*]} sp get-claims ${DEAL_ID}"
-  log "or re-run: ./scripts/tooling/make-deal.sh --deal-id ${DEAL_ID} --wait-claims"
+if [[ "$WAIT_CLAIMS" != true ]]; then
+  log "stopping after Curio piece URLs (--no-wait-claims)"
+  log "later: ${CLI[*]} admin submit-evidence ${DEAL_ID} --wait"
+  log "then: ${CLI[*]} sp get-claims ${DEAL_ID}"
+  log "or re-run without --no-wait-claims: ./scripts/tooling/make-deal.sh --deal-id ${DEAL_ID}"
   log "done. deal_id=${DEAL_ID} state=${state} unclaimed=${ALLOC_COUNT} claims=${CLAIM_COUNT} onboard_dir=${ONBOARD_DIR}"
+  exit 0
 fi
+
+if [[ "$EXPECTED_PIECES" -eq 0 ]]; then
+  # Fully claimed already (adapter pending=0 and we had claims), or empty deal.
+  CLAIM_COUNT="$(deal_adapter_claim_id_count "$DEAL_ID")"
+  [[ "$CLAIM_COUNT" -gt 0 ]] || die "deal ${DEAL_ID} has no adapter allocations or claims"
+  EXPECTED_PIECES="$CLAIM_COUNT"
+fi
+
+# allocations complete → submit-evidence → claims visible via sp get-claims
+wait_until_all_claimed "$DEAL_ID" "$EXPECTED_PIECES" "$WAIT_CLAIMS_TIMEOUT"
+CLAIM_COUNT="$(deal_claim_count "$DEAL_ID")"
+log "adapter/VerifReg claims (sp get-claims):"
+cli_json_retry sp get-claims "$DEAL_ID" | jq .
+log "done. deal_id=${DEAL_ID} state=${state} claims=${CLAIM_COUNT}/${EXPECTED_PIECES} onboard_dir=${ONBOARD_DIR}"
