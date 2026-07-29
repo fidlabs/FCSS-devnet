@@ -78,17 +78,15 @@ runtime_dump_stack() {
 # Prune old failure dirs; keep the newest N (default 10).
 runtime_prune_failures() {
   local keep="${1:-10}"
+  local i=0 d
   runtime_ensure_dirs
   # Newest first by name (UTC timestamps sort lexicographically).
-  local dirs=()
+  # Avoid empty "${array[@]}" under bash 3.2 + set -u.
   while IFS= read -r d; do
-    [[ -n "$d" ]] && dirs+=("$d")
-  done < <(ls -1d "${RUNTIME_FAILURES}"/*/ 2>/dev/null | sort -r || true)
-  local i=0
-  for d in "${dirs[@]}"; do
+    [[ -n "$d" ]] || continue
     i=$((i + 1))
     if [[ "$i" -gt "$keep" ]]; then
       rm -rf "$d"
     fi
-  done
+  done < <(ls -1d "${RUNTIME_FAILURES}"/*/ 2>/dev/null | sort -r || true)
 }
