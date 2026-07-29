@@ -9,7 +9,7 @@
 # Usage:
 #   ./scripts/porep-market/gen-env.sh
 #   CURIO_CONTRACTS_DIR=/path/to/contracts ./scripts/porep-market/gen-env.sh
-#   ./scripts/porep-market/gen-env.sh --contracts-dir /path/to/contracts --rpc-url http://127.0.0.1:1234/rpc/v1
+#   ./scripts/porep-market/gen-env.sh --contracts-dir /path/to/contracts --rpc-url http://127.0.0.1:2234/rpc/v1
 #
 # Exit codes:
 #   0  wrote .env
@@ -39,7 +39,7 @@ Options:
   --contracts-dir DIR   Curio contracts artifact dir
                         (default: <repo>/extern/curio/docker/data/contracts or CURIO_CONTRACTS_DIR)
   --rpc-url URL         Lotus HTTP RPC for RPC_TEST
-                        (default: http://127.0.0.1:1234/rpc/v1 or CURIO_RPC_URL)
+                        (default: http://127.0.0.1:2234/rpc/v1 or CURIO_RPC_URL)
   --out FILE            Output path (default: .env or CURIO_ENV_OUT)
   --force               Overwrite existing output without backup
   -h, --help            Show this help

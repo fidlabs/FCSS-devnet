@@ -66,10 +66,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 : "${ORACLE_DIR:=${REPO_ROOT}/extern/filecoin-oracle-service}"
-DEPLOYMENT_JSON="${POREP_MARKET_DIR}/deployments/devnet/latest.json"
+DEPLOYMENT_JSON="$(active_latest_json 2>/dev/null || true)"
+DEPLOYMENT_JSON="${DEPLOYMENT_JSON:-${POREP_MARKET_DIR}/deployments/devnet/latest.json}"
 DEPLOYER_KEY_FILE="${CONTRACTS_DIR}/deployer.private-key"
 OUT_FILE="${OUT_FILE:-${ORACLE_DIR}/.env}"
 COMPOSE_FILE="${ORACLE_DIR}/docker-compose.yml"
+COMPOSE_PORTS_OVERRIDE="${REPO_ROOT}/docker/oracle-compose.ports.yaml"
 
 [[ -d "$ORACLE_DIR" ]] || die "oracle submodule missing at ${ORACLE_DIR} (run: git submodule update --init --recursive)"
 
@@ -184,9 +186,9 @@ CRON_REJECT="$(cron_resolve TRIGGER_REJECT_EXPIRED_DEAL_INTERVAL_CRON '*/30 * * 
 CRON_REFRESH="$(cron_resolve TRIGGER_REFRESH_EVIDENCE_STATUS_INTERVAL_CRON '0 */6 * * *')"
 CRON_URL_FINDER="$(cron_resolve SYNC_URL_FINDER_SLI_TARGETS_JOB_INTERVAL_CRON '0 */6 * * *')"
 
-DATABASE_URL="${DATABASE_URL:-postgresql://postgres:postgres@localhost:8038/postgres}"
-# Curio indexer publishes host 3000-3003; keep oracle off that range.
-APP_PORT="${APP_PORT:-3100}"
+DATABASE_URL="${DATABASE_URL:-${ORACLE_DATABASE_URL}}"
+# FCSS host ports: indexer 23000–23003; oracle app defaults to 23100.
+APP_PORT="${APP_PORT:-${FCSS_ORACLE_APP_HOST_PORT}}"
 LOG_LEVEL="${LOG_LEVEL:-info}"
 EVIDENCE_BATCH_SIZE="${EVIDENCE_BATCH_SIZE:-1000}"
 
@@ -267,24 +269,32 @@ npm run build
 require_file "$COMPOSE_FILE"
 require_file "$OUT_FILE"
 
-log "starting oracle-service-db (docker compose)"
-docker compose -f "$COMPOSE_FILE" up -d
+require_file "$COMPOSE_PORTS_OVERRIDE"
+oracle_compose() {
+  docker compose -f "$COMPOSE_FILE" -f "$COMPOSE_PORTS_OVERRIDE" "$@"
+}
+
+log "starting oracle-service-db (docker compose; host port ${FCSS_ORACLE_PG_HOST_PORT})"
+oracle_compose up -d
 
 log "waiting for Postgres to accept connections"
 ready=false
 for _ in $(seq 1 60); do
-  if docker compose -f "$COMPOSE_FILE" exec -T oracle-service-db pg_isready -U postgres >/dev/null 2>&1; then
+  if oracle_compose exec -T oracle-service-db pg_isready -U postgres >/dev/null 2>&1; then
     ready=true
     break
   fi
   sleep 1
 done
-[[ "$ready" == true ]] || die "oracle-service-db did not become ready (pg_isready)"
+[[ "$ready" == true ]] || {
+  runtime_dump_stack oracle-postgres "host_port=${FCSS_ORACLE_PG_HOST_PORT}" >/dev/null || true
+  die "oracle-service-db did not become ready (pg_isready)"
+}
 
 log "applying Prisma schema"
 "${SCRIPT_DIR}/db-schema.sh"
 
-log "Postgres ready on localhost:8038"
+log "Postgres ready on localhost:${FCSS_ORACLE_PG_HOST_PORT}"
 
 # ---------------------------------------------------------------------------
 # 3) App (foreground)

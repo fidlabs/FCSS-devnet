@@ -11,7 +11,7 @@
 #   just oracle get-deals --state Accepted
 #
 # Env:
-#   ORACLE_URL   base URL (default: http://127.0.0.1:<APP_PORT from .env or 3100>)
+#   ORACLE_URL   base URL (default: http://127.0.0.1:<APP_PORT from .env or 23100>)
 # Compatible with macOS /bin/bash 3.2.
 
 set -euo pipefail
@@ -60,11 +60,11 @@ done
 require_cmd curl
 
 if [[ -z "${ORACLE_URL:-}" ]]; then
-  port=3100
+  port="${FCSS_ORACLE_APP_HOST_PORT}"
   if [[ -f "$ENV_FILE" ]]; then
     port="$(env_get APP_PORT "$ENV_FILE" 2>/dev/null || printf '%s' "$port")"
   fi
-  ORACLE_URL="http://127.0.0.1:${port}"
+  ORACLE_URL="http://${FCSS_HOST}:${port}"
 fi
 
 query=""

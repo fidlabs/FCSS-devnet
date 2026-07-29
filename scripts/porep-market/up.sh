@@ -64,7 +64,7 @@ Environment:
   CURIO_DIR              Path to curio checkout (default: ./extern/curio)
   POREP_MARKET_DIR       Path to porep-market checkout (default: ./extern/porep-market)
   TOOLING_DIR            Path to tooling (default: ./extern/filecoin-porep-market-tooling)
-  RPC_URL                Lotus FEVM RPC (default: http://127.0.0.1:1234/rpc/v1)
+  RPC_URL                Lotus FEVM RPC (default: http://127.0.0.1:2234/rpc/v1)
   LOTUS_CONTAINER        Docker container name (default: lotus)
   LOTUS_MINER_CONTAINER  Docker container name (default: lotus-miner)
   CURIO_CONTAINER        Docker container name (default: curio)
@@ -118,9 +118,10 @@ is_authorized_for_provider() {
 
 wait_until_authorized() {
   local pid="$1"
-  local attempts="${2:-30}"
-  local i auth
-  for i in $(seq 1 "$attempts"); do
+  local timeout_s="${POREP_AUTHORIZE_TIMEOUT_S:-300}"
+  local deadline=$((SECONDS + timeout_s))
+  local auth
+  while (( SECONDS < deadline )); do
     set +e
     auth="$(is_authorized_for_provider "$pid" 3)"
     set -e
@@ -130,7 +131,8 @@ wait_until_authorized() {
     fi
     sleep 2
   done
-  die "org ${SP_ORGANIZATION} is not authorized for provider ${pid} after control set (still false after ${attempts} checks)"
+  runtime_dump_stack porep-authorize "provider=${pid}" "timeout=${timeout_s}s" >/dev/null || true
+  die "org ${SP_ORGANIZATION} is not authorized for provider ${pid} after control set (timeout ${timeout_s}s)"
 }
 
 miner_id_num() {
@@ -238,7 +240,8 @@ CURIO_DIR="$(cd "$CURIO_DIR" && pwd)"
 POREP_MARKET_DIR="$(cd "$POREP_MARKET_DIR" && pwd)"
 
 CONTRACTS_DIR="${CURIO_DIR}/docker/data/contracts"
-DEPLOYMENT_JSON="${POREP_MARKET_DIR}/deployments/devnet/latest.json"
+DEPLOYMENT_JSON="$(active_latest_json 2>/dev/null || true)"
+DEPLOYMENT_JSON="${DEPLOYMENT_JSON:-${POREP_MARKET_DIR}/deployments/devnet/latest.json}"
 DEPLOYER_KEY_FILE="${CONTRACTS_DIR}/deployer.private-key"
 CONTRACT_ADDRESSES_JSON="${CONTRACTS_DIR}/contract_addresses.json"
 DEVNET_INFO_JSON="${CONTRACTS_DIR}/devnet-info.json"

@@ -9,6 +9,7 @@ Unified diffs applied by [`scripts/curio/init.sh`](../../scripts/curio/init.sh) 
 | `0003-dockerfile-skip-submodule-init.patch` | Nested-submodule docker build: skip in-image `git submodule update` |
 | `0004-deps-mk-skip-submodule-init.patch` | Same for `make deps` (`build/.update-modules`) |
 | `0005-build-mk-git-describe-fallback.patch` | Soft-fail `git log` for `CurrentCommit` when nested `.git` is invalid in-image |
+| `0006-fcss-host-ports.patch` | Publish Curio/Lotus/Yugabyte/indexer on FCSS host ports (`2234`, `22300`, `22310`, …) and set `DEV_CURIO_EXTERNAL_URL` to `:22310` |
 
 These patches are **environmental only** (nested-submodule docker build, host reachability, local UI edge cases). They are **not** suitable to push upstream to Curio.
 

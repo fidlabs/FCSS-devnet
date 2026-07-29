@@ -1,0 +1,81 @@
+diff --git a/docker/docker-compose.yaml b/docker/docker-compose.yaml
+--- a/docker/docker-compose.yaml
++++ b/docker/docker-compose.yaml
+@@ -20,8 +20,8 @@
+     image: ${LOTUS_IMAGE}
+     init: true
+     ports:
+-      - "1234:1234"
+-      - "9090:9090"
++      - "2234:1234"
++      - "29090:9090"
+     environment:
+       - LOTUS_FEVM_ENABLEETHRPC=true
+       - LOTUS_API_LISTENADDRESS=/dns/lotus/tcp/1234/http
+@@ -78,7 +78,7 @@
+     image: ${LOTUS_MINER_IMAGE}
+     init: true
+     ports:
+-      - "2345:2345"
++      - "22345:2345"
+     environment:
+       - LOTUS_API_LISTENADDRESS=/dns/lotus-miner/tcp/2345/http
+       - LOTUS_API_REMOTELISTENADDRESS=lotus-miner:2345
+@@ -102,16 +102,16 @@
+     image: ${CURIO_IMAGE}
+     init: true
+     ports:
+-      - "12300:12300" # API
+-      - "4701:4701" # UI
+-      - "12310:12310" # Market
++      - "22300:12300" # API (FCSS host)
++      - "24701:4701" # UI (FCSS host)
++      - "22310:12310" # Market (FCSS host)
+     environment:
+       - CURIO_REPO_PATH=/var/lib/curio
+       - CURIO_HARMONYDB_HOSTS=yugabyte
+       - CONTRACT_ENV_FILE=/var/lib/contracts/curio-devnet.env
+       # Host-reachable IPNI/retrieval announce URL (overrides HTTP.DomainName for ads).
+       # Indexer reaches Curio via published host port; host clients use the same name.
+-      - DEV_CURIO_EXTERNAL_URL=http://host.docker.internal:12310
++      - DEV_CURIO_EXTERNAL_URL=http://host.docker.internal:22310
+     extra_hosts:
+       - "host.docker.internal:host-gateway"
+     restart: unless-stopped
+@@ -133,9 +133,9 @@
+     environment:
+       - TINI_SUBREAPER=true
+     ports:
+-      - "5433:5433"
+-      - "9042:9042"
+-      - "15433:15433"
++      - "25433:5433"
++      - "29042:9042"
++      - "25432:15433"
+     restart: unless-stopped
+     logging: *default-logging
+     volumes:
+@@ -150,7 +150,7 @@
+     image: ${PIECE_SERVER_IMAGE}
+     init: true
+     ports:
+-      - "12320:12320" # piece-server
++      - "22320:12320" # piece-server (FCSS host)
+     environment:
+       - CURIO_MK12_CLIENT_REPO=/var/lib/curio-client
+     restart: unless-stopped
+@@ -171,10 +171,10 @@
+     image: ${INDEXER_IMAGE}
+     init: true
+     ports:
+-      - "3000:3000"
+-      - "3001:3001"
+-      - "3002:3002"
+-      - "3003:3003"
++      - "23000:3000"
++      - "23001:3001"
++      - "23002:3002"
++      - "23003:3003"
+     environment:
+       - STORETHEINDEX_PATH=/var/lib/indexer
+     extra_hosts:

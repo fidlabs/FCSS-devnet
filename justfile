@@ -10,12 +10,17 @@ mod oracle 'just/oracle.just'
 default:
     @just --list
 
-# Submodules + Curio patches/images + tooling patches/venv + oracle patches
+# Submodules + Curio patches/images + tooling patches/venv + oracle patches + pin-verify
 init:
     git submodule update --init --recursive
     just curio init
     just tooling init
     just oracle patch
+    just pin-verify
+
+# Assert versions.lock.yaml matches submodule HEADs/gitlinks and patches apply
+pin-verify:
+    ./scripts/pins/verify.sh
 
 # Compose up + Curio config + porep deploy + SP wiring + oracle (init/DB/start)
 up:
@@ -27,6 +32,14 @@ up:
 down:
     just oracle down
     just curio down
+
+# Probe RPC / Curio / oracle / ACTIVE / pins (non-fatal pin warn)
+status:
+    ./scripts/status.sh
+
+# Wipe chain/DB/envs (preserve records/images/patches), then just up
+reset:
+    ./scripts/reset.sh
 
 # Flags go straight to the script. Example: just make-deal --deal-id 1
 make-deal *args:

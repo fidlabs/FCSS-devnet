@@ -206,6 +206,7 @@ wait_for_curio_ready() {
   echo "  marker=${marker} present=$([[ -f $marker ]] && echo yes || echo no)" >&2
   echo "  provider.ready present=$([[ -f $provider_ready ]] && echo yes || echo no)" >&2
   echo "  devnet-info present=$([[ -f $devnet_info ]] && echo yes || echo no)" >&2
+  runtime_dump_stack curio-ready "timeout=${timeout_s}s" >/dev/null || true
   return 1
 }
 
@@ -250,12 +251,12 @@ cat /tmp/base.toml | docker compose exec -T curio curio config set --title base
 docker compose exec -T curio curio config get market > /tmp/market.toml
 set_toml_value /tmp/market.toml Ingest DisableSSRFProtection true
 # Keep DomainName as a DNS label (not an IP). Host-reachable IPNI ads come from
-# DEV_CURIO_EXTERNAL_URL=http://host.docker.internal:12310 in docker-compose.yaml.
+# DEV_CURIO_EXTERNAL_URL=http://host.docker.internal:22310 in docker-compose.yaml.
 set_toml_value /tmp/market.toml Market.StorageMarketConfig.IPNI DirectAnnounceURLs '["http://indexer:3001"]'
 set_toml_value /tmp/market.toml Market.StorageMarketConfig.IPNI ServiceURL '["http://indexer:3000"]'
 cat /tmp/market.toml | docker compose exec -T curio curio config set --title market
 echo "Curio successfully updated. Loopback IPs are now allowed."
-echo "IPNI announce URL override: DEV_CURIO_EXTERNAL_URL (host.docker.internal:12310)."
+echo "IPNI announce URL override: DEV_CURIO_EXTERNAL_URL (host.docker.internal:${FCSS_CURIO_MARKET_HOST_PORT:-22310})."
 
 echo "Recreating indexer so it can resolve host.docker.internal for ad sync..."
 docker compose up -d --force-recreate indexer

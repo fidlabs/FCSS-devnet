@@ -40,13 +40,34 @@ Orchestration: [`scripts/porep-market/deploy.sh`](scripts/porep-market/deploy.sh
 ```bash
 git clone https://github.com/fidlabs/FCSS-devnet.git
 cd FCSS-devnet
-just init    # submodules (recursive), Curio patches/images, tooling venv, oracle patches
+just init    # submodules (recursive), Curio patches/images, tooling venv, oracle patches, pin-verify
 just up      # compose up + Curio config + porep V2 deploy + SP wiring
+just status  # RPC / Curio / oracle / ACTIVE / pin check
 # prepare + serve a deal manifest/pieces (e.g. Singularity — see below), then:
 just make-deal
+# destructive wipe of chain/DB/envs (keeps deployment records), then just up:
+# just reset
 ```
 
-`just init` runs `git submodule update --init --recursive`, then `just curio init` and `just tooling init` (tooling patches + venv). Recursive init is required for porep-market forge libs (`lib/fvm-solidity`, …). Set `SKIP_DOCKER=1` to skip the Curio image build; `SKIP_VENV=1` to skip the tooling venv; `SKIP_PATCH=1` to skip tooling patch reset/apply.
+`just init` runs `git submodule update --init --recursive`, then `just curio init` and `just tooling init` (tooling patches + venv), then `just pin-verify` against [`versions.lock.yaml`](versions.lock.yaml). Recursive init is required for porep-market forge libs (`lib/fvm-solidity`, …). Set `SKIP_DOCKER=1` to skip the Curio image build; `SKIP_VENV=1` to skip the tooling venv; `SKIP_PATCH=1` to skip tooling patch reset/apply.
+
+To bump pins: update submodule gitlinks → refresh `patches/*` if needed → rewrite commits in `versions.lock.yaml` → `just pin-verify`.
+
+## Host endpoints (FCSS ports)
+
+Host publish ports are isolated from stock Curio defaults so this stack can run beside another Curio/Lotus. Defaults live in [`scripts/lib/ports.sh`](scripts/lib/ports.sh) (sourced by `common.sh`). Container-internal ports are unchanged.
+
+| Service | Host URL / port |
+|---------|-----------------|
+| Lotus RPC | `http://127.0.0.1:2234/rpc/v1` |
+| Curio API | `http://127.0.0.1:22300` |
+| Curio Market / HTTP | `http://127.0.0.1:22310` |
+| Curio UI | `http://127.0.0.1:24701` |
+| piece-server | `http://127.0.0.1:22320` |
+| Indexer | `23000`–`23003` |
+| Yugabyte YSQL (host) | `25433` |
+| Oracle Postgres | `localhost:28038` |
+| Oracle HTTP | `http://127.0.0.1:23100` |
 
 ## Just recipes
 
@@ -54,15 +75,18 @@ Root recipes compose submodule modules ([`just/`](just/)):
 
 | Recipe | Does |
 |--------|------|
-| `just init` | submodule update → `curio init` → `tooling init` (incl. patches) → `oracle patch` |
+| `just init` | submodule update → `curio init` → `tooling init` → `oracle patch` → `pin-verify` |
+| `just pin-verify` | assert `versions.lock.yaml` vs HEADs/gitlinks + patch `--check` |
 | `just up` | `curio up` → `porep-market deploy` → `porep-market up` → `oracle up` (init/DB + start, foreground) |
+| `just status` | probe Lotus/Curio/oracle + ACTIVE + pin-verify (warn) |
 | `just down` | `oracle down` (Postgres compose) + `curio down` |
+| `just reset` | wipe chain/DB/envs (preserve records/images/patches), then `just up` |
 | `just make-deal …` | tooling venv + V2 deal pipeline (flags go to the script) |
 
 Namespaced (same scripts):
 
 - `just curio init|up|cli|logs|down`
-- `just porep-market gen-env|deploy|up`
+- `just porep-market gen-env|deploy|up|tooling-env|use-deployment`
 - `just tooling patch` — reset tooling submodule + apply [`patches/tooling/`](patches/tooling/)
 - `just tooling init|make-deal` — `init` applies tooling patches then creates the venv
 - `just oracle patch` — reset oracle submodule + apply [`patches/oracle/`](patches/oracle/)
@@ -70,6 +94,8 @@ Namespaced (same scripts):
 - `just oracle get-deals` — `curl` `GET /deals` (optional `--state` / `--page` / `--limit`)
 - `just oracle logs` — follow oracle `docker compose` logs
 - `just oracle down` — `docker compose down` for oracle Postgres
+
+**Lifecycle:** `down` stops containers; `reset` is the only public destructive recipe (wipes Curio `docker/data`, oracle DB, `.deployment/`, and generated `.env` files after backup). Immutable deploy history under `extern/porep-market/deployments/devnet/records/` is preserved; `ACTIVE` is refreshed on the next deploy. Failure dumps land in `.runtime/failures/` (gitignored).
 
 Oracle cron schedules: edit `TRIGGER_*_CRON` / `SYNC_URL_FINDER_*` in `extern/filecoin-oracle-service/.env` (kept across `just oracle up`), or pass them when regenerating, e.g. `TRIGGER_SYNC_DEALS_JOB_INTERVAL_CRON='* * * * *' just oracle up --force`. Restart after changing crons (`just oracle up`).
 
@@ -90,8 +116,13 @@ Shared helpers live in [`scripts/lib/`](scripts/lib/) (`common.sh`, `envfile.sh`
 | `scripts/curio/up.sh` | Post-bootstrap Curio config (SSRF, IPNI, WinningPoSt, control, escrow) |
 | `scripts/curio/cli.sh` | `CURIO_PATH` wrapper: `curio` inside the compose service |
 | `scripts/porep-market/gen-env.sh` | Write porep-market `.env` for V2 `Deploy.s.sol` + Curio artifacts |
-| `scripts/porep-market/deploy.sh` | NoOp MetaAllocator + V2 `Deploy.s.sol` + helpers (ViewHelper, ClaimInspector, SectorStatusInspector) |
+| `scripts/porep-market/deploy.sh` | NoOp MetaAllocator + V2 `Deploy.s.sol` + helpers; writes immutable `records/` + `ACTIVE` |
 | `scripts/porep-market/up.sh` | SP org + tooling `.env` + V2 register/offer + DataCap to adapter |
+| `scripts/porep-market/tooling-env.sh` | Public `export` lines from ACTIVE (no keys) for external tools |
+| `scripts/porep-market/use-deployment.sh` | Point `ACTIVE` at an existing record; mirror `latest.json` |
+| `scripts/pins/verify.sh` | Lockfile vs submodule HEADs/gitlinks + patch apply check |
+| `scripts/status.sh` | Stack health + ACTIVE + pin-verify |
+| `scripts/reset.sh` | Destructive wipe then `just up` |
 | `scripts/tooling/patch.sh` | Reset tooling submodule + apply `patches/tooling/*.patch` |
 | `scripts/tooling/init.sh` | Tooling patches + Python venv |
 | `scripts/tooling/make-deal.sh` | V2 propose → accept → init → allocate → onboard → claim → add-url → wait allocations → `submit-evidence` → confirm claims |

@@ -253,7 +253,10 @@ log "checking Lotus RPC at ${RPC_URL}"
 curl -sf -m 5 -X POST "$RPC_URL" \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","method":"Filecoin.ChainHead","params":[],"id":1}' \
-  >/dev/null || die "Lotus RPC not reachable at ${RPC_URL}"
+  >/dev/null || {
+  runtime_dump_stack lotus-rpc "rpc=${RPC_URL}" >/dev/null || true
+  die "Lotus RPC not reachable at ${RPC_URL}"
+}
 
 require_file "$DEPLOYER_KEY_FILE"
 ADMIN_PRIVATE_KEY="$(tr -d '[:space:]' < "$DEPLOYER_KEY_FILE")"
@@ -275,6 +278,7 @@ if [[ "$HELPERS_ONLY" == true ]]; then
     || die "missing contracts.DataCapEvidenceAdapter.proxy in ${DEPLOYMENT_JSON}"
 
   deploy_and_record_helpers "$PRIVATE_KEY_TEST" "$POREP_MARKET_PROXY" "$DATACAP_ADAPTER" "$RPC_TEST"
+  publish_deployment_record "$DEPLOYMENT_JSON" >/dev/null
   log "done — helpers recorded in ${DEPLOYMENT_JSON}"
   exit 0
 fi
@@ -349,5 +353,7 @@ DATACAP_ADAPTER="$(jq -r '.contracts.DataCapEvidenceAdapter.proxy // empty' "$DE
   || die "missing contracts.DataCapEvidenceAdapter.proxy in ${DEPLOYMENT_JSON}"
 
 deploy_and_record_helpers "$PRIVATE_KEY_TEST" "$POREP_MARKET_PROXY" "$DATACAP_ADAPTER" "$RPC_TEST"
+
+publish_deployment_record "$DEPLOYMENT_JSON" >/dev/null
 
 log "done — porep-market deployed (${DEPLOYMENT_JSON})"

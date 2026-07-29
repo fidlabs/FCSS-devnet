@@ -10,3 +10,8 @@
 .env.bak.*
 deal-*/
 logs/
+.runtime/
+
+# Local deployment pointers/records (immutable history; not upstream)
+extern/porep-market/deployments/devnet/ACTIVE
+extern/porep-market/deployments/devnet/records/

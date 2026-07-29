@@ -19,7 +19,7 @@ get-deals *args:
     ./scripts/oracle/get-deals.sh {{args}}
 
 logs:
-    docker compose -f extern/filecoin-oracle-service/docker-compose.yml logs -f
+    docker compose -f extern/filecoin-oracle-service/docker-compose.yml -f docker/oracle-compose.ports.yaml logs -f
 
 down:
-    docker compose -f extern/filecoin-oracle-service/docker-compose.yml down
+    docker compose -f extern/filecoin-oracle-service/docker-compose.yml -f docker/oracle-compose.ports.yaml down

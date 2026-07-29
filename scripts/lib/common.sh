@@ -23,10 +23,19 @@ _POREP_SCRIPTS_DIR="$(cd "${_POREP_LIB_DIR}/.." && pwd)"
 : "${CURIO_CONTRACTS_DIR:=${CONTRACTS_DIR}}"
 : "${CURIO_CLI:=${SCRIPTS_DIR}/curio/cli.sh}"
 
-# Prefer RPC_URL; accept legacy aliases.
-: "${RPC_URL:=${RPC:-${CURIO_RPC_URL:-http://127.0.0.1:1234/rpc/v1}}}}"
+# Host port map + default RPC/API URLs (FCSS isolated ports).
+# shellcheck source=ports.sh
+source "${_POREP_LIB_DIR}/ports.sh"
+
+# Prefer RPC_URL; accept legacy aliases (ports.sh already set a default).
+: "${RPC_URL:=${RPC:-${CURIO_RPC_URL:-${RPC_URL}}}}"
 : "${RPC:=${RPC_URL}}"
 : "${CURIO_RPC_URL:=${RPC_URL}}"
+
+# shellcheck source=runtime.sh
+source "${_POREP_LIB_DIR}/runtime.sh"
+# shellcheck source=deployment.sh
+source "${_POREP_LIB_DIR}/deployment.sh"
 
 : "${LOTUS_CONTAINER:=lotus}"
 : "${LOTUS_MINER_CONTAINER:=lotus-miner}"
