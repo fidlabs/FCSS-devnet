@@ -55,7 +55,7 @@ Root recipes compose submodule modules ([`just/`](just/)):
 | Recipe | Does |
 |--------|------|
 | `just init` | submodule update → `curio init` → `tooling init` (incl. patches) → `oracle patch` |
-| `just up` | `curio up` → `porep-market deploy` → `porep-market up` → `oracle init` → oracle Postgres/schema |
+| `just up` | `curio up` → `porep-market deploy` → `porep-market up` → `oracle up` (init/DB + start, foreground) |
 | `just down` | `oracle down` (Postgres compose) + `curio down` |
 | `just make-deal …` | tooling venv + V2 deal pipeline (flags go to the script) |
 
@@ -66,21 +66,19 @@ Namespaced (same scripts):
 - `just tooling patch` — reset tooling submodule + apply [`patches/tooling/`](patches/tooling/)
 - `just tooling init|make-deal` — `init` applies tooling patches then creates the venv
 - `just oracle patch` — reset oracle submodule + apply [`patches/oracle/`](patches/oracle/)
-- `just oracle init` — write `extern/filecoin-oracle-service/.env` from V2 `latest.json` + Curio deployer (after `just up`; also re-applies patches)
-- `just oracle up` — Postgres + Prisma schema, then `npm run start` (foreground)
-- `just oracle start` — `npm run start` (foreground; requires `just oracle init` build)
+- `just oracle up` — patches + `.env`/build + Postgres/Prisma + `npm run start` (foreground)
 - `just oracle get-deals` — `curl` `GET /deals` (optional `--state` / `--page` / `--limit`)
 - `just oracle logs` — follow oracle `docker compose` logs
 - `just oracle down` — `docker compose down` for oracle Postgres
 
-Oracle cron schedules: edit `TRIGGER_*_CRON` / `SYNC_URL_FINDER_*` in `extern/filecoin-oracle-service/.env` (kept across `init --force`), or pass them when regenerating, e.g. `TRIGGER_SYNC_DEALS_JOB_INTERVAL_CRON='* * * * *' just oracle init --force`. Restart the oracle process after changing crons.
+Oracle cron schedules: edit `TRIGGER_*_CRON` / `SYNC_URL_FINDER_*` in `extern/filecoin-oracle-service/.env` (kept across `just oracle up`), or pass them when regenerating, e.g. `TRIGGER_SYNC_DEALS_JOB_INTERVAL_CRON='* * * * *' just oracle up --force`. Restart after changing crons (`just oracle up`).
 
 Off-chain services **not** part of this local deployment for now: `CDP_SERVICE_URL` (settlement-history sync) and `URL_FINDER_SERVICE_URL` / `URL_FINDER_AUTH_TOKEN` (URL Finder SLI targets). Deal sync and `just oracle get-deals` do not need them; leave those env vars empty unless you point them at external services yourself.
 
 **TODO (push upstream):**
 
 - **Oracle** — local patches under [`patches/oracle/`](patches/oracle/): (1) `0001` settlement history genesis for Curio `CHAIN_ID=31415926`; (2) `0002` re-enable cron schedules; (3) `0003` call `getDealViews` on ViewHelper; (4) `0004` V2 ViewHelper ABI + deal-sync mapping (`proposedAtEpoch` on deal, no `timing` tuple); (5) `0005` skip claim inspector when address unset. Open PRs on oracle `v2` and drop the patches once merged. Local deploy ships ViewHelper via `just porep-market deploy` (or `--view-helper-only`).
-- **Tooling** — local patches under [`patches/tooling/`](patches/tooling/) (see that README): EthAddress zero-address fix; compose `get_deal_view` from market getters + V2 ABI (no on-market `getDealView`); `admin submit-evidence` for `submitEvidenceBatch`. Open PRs on tooling `feature-v2-adjust-contracts` (or successor) and drop the patches once merged. `make-deal` always runs submit-evidence after allocations complete (orchestration in this repo).
+- **Tooling** — local patches under [`patches/tooling/`](patches/tooling/) (see that README): compose `get_deal_view` from market getters + V2 ABI (no on-market `getDealView`); `admin submit-evidence` for `submitEvidenceBatch`; `proposeDeal` `dealType` (`--deal-type private|public`, default private). Open PRs on tooling `feature-v2-adjust-contracts` (or successor) and drop the patches once merged. `make-deal` always runs submit-evidence after allocations complete (orchestration in this repo).
 
 ## Scripts
 
@@ -98,10 +96,8 @@ Shared helpers live in [`scripts/lib/`](scripts/lib/) (`common.sh`, `envfile.sh`
 | `scripts/tooling/init.sh` | Tooling patches + Python venv |
 | `scripts/tooling/make-deal.sh` | V2 propose → accept → init → allocate → onboard → claim → add-url → wait allocations → `submit-evidence` → confirm claims |
 | `scripts/oracle/patch.sh` | Reset oracle submodule + apply `patches/oracle/*.patch` |
-| `scripts/oracle/init.sh` | Write oracle-service `.env`, then `npm ci` + `npm run build` |
-| `scripts/oracle/up.sh` | `docker compose up` for oracle Postgres, then `db-schema.sh` |
+| `scripts/oracle/up.sh` | Patches + `.env`/build + Postgres/Prisma + `npm run start` |
 | `scripts/oracle/db-schema.sh` | `npm ci` (if needed) + `prisma generate` + `prisma db push` (used by `up.sh`) |
-| `scripts/oracle/start.sh` | `npm run start` |
 | `scripts/oracle/get-deals.sh` | `curl` `GET /deals` against the local oracle API |
 
 Also: [`contracts/allocator/NoOpMetaAllocator.{sol,json}`](contracts/allocator/) (MetaAllocator stub so DataCapEvidenceAdapter can call `addVerifiedClient` on FEVM).
@@ -111,7 +107,7 @@ Also: [`contracts/allocator/NoOpMetaAllocator.{sol,json}`](contracts/allocator/)
 1. `just init`
 2. `just up`
 3. Prepare a deal dataset (e.g. with Singularity — below), then `just make-deal`
-4. Optional: `just oracle up` (Postgres + schema + `npm run start`), or `just oracle start` if DB is already up
+4. Oracle is started by `just up` (`just oracle up`). Re-run `just oracle up` to refresh `.env` and restart.
 5. Optional: test paid retrievals with [`large-paid-retrievals`](https://github.com/fidlabs/large-paid-retrievals) — see that project’s README
 
 See each script’s header for flags and env overrides (`CURIO_DIR`, `POREP_MARKET_DIR`, `TOOLING_DIR`, `ENV_FILE`, `RPC_URL`, …).

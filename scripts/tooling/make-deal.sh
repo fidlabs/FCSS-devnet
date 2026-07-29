@@ -53,6 +53,7 @@ CLI=("$PYTHON" "${TOOLING_DIR}/porep_tooling_cli.py")
 MANIFEST_URL="${MANIFEST_URL:-http://127.0.0.1:8080/manifest.json}"
 PRICE_PER_SECTOR_PER_MONTH="${PRICE_PER_SECTOR_PER_MONTH:-2000000000000000000}" # 2 USDFC
 DURATION_MONTHS="${DURATION_MONTHS:-6}"
+DEAL_TYPE="${DEAL_TYPE:-private}"
 RETRIEVABILITY_BPS="${RETRIEVABILITY_BPS:-0}"
 BANDWIDTH_MBPS="${BANDWIDTH_MBPS:-0}"
 LATENCY_MS="${LATENCY_MS:-0}"
@@ -80,6 +81,7 @@ Options:
   --manifest-url URL              Manifest URL (default: ${MANIFEST_URL})
   --price-per-sector-per-month N  Wei-equivalent USDFC / sector / month (default: ${PRICE_PER_SECTOR_PER_MONTH})
   --duration-months N             Deal duration in months, min 6 (default: ${DURATION_MONTHS})
+  --deal-type TYPE                private|public (default: ${DEAL_TYPE})
   --deal-id N                     Skip propose; resume from this deal id
   --onboard-dir DIR               Directory for sp onboard-data (default: ./deal-<id>)
   --piece-base-url URL            Piece CAR base URL for Curio add-url (default: ${PIECE_BASE_URL})
@@ -944,6 +946,7 @@ while [[ $# -gt 0 ]]; do
     --manifest-url) MANIFEST_URL="$2"; shift 2 ;;
     --price-per-sector-per-month) PRICE_PER_SECTOR_PER_MONTH="$2"; shift 2 ;;
     --duration-months) DURATION_MONTHS="$2"; shift 2 ;;
+    --deal-type) DEAL_TYPE="$2"; shift 2 ;;
     --deal-id) DEAL_ID="$2"; shift 2 ;;
     --onboard-dir) ONBOARD_DIR="$2"; shift 2 ;;
     --piece-base-url) PIECE_BASE_URL="$2"; shift 2 ;;
@@ -1014,7 +1017,8 @@ if [[ -z "$DEAL_ID" ]]; then
     --price-per-sector-per-month "$PRICE_PER_SECTOR_PER_MONTH" \
     --duration-months "$DURATION_MONTHS" \
     --latency-ms "$LATENCY_MS" \
-    --indexing-pct "$INDEXING_PCT" 2>&1 | tee "$propose_log"
+    --indexing-pct "$INDEXING_PCT" \
+    --deal-type "$DEAL_TYPE" 2>&1 | tee "$propose_log"
   propose_rc=${PIPESTATUS[0]:-1}
   set -o pipefail
   set -e
@@ -1037,7 +1041,8 @@ if [[ -z "$DEAL_ID" ]]; then
         --price-per-sector-per-month "$PRICE_PER_SECTOR_PER_MONTH" \
         --duration-months "$DURATION_MONTHS" \
         --latency-ms "$LATENCY_MS" \
-        --indexing-pct "$INDEXING_PCT"
+        --indexing-pct "$INDEXING_PCT" \
+        --deal-type "$DEAL_TYPE"
       propose_rc=$?
       set -e
       if [[ $propose_rc -eq 0 ]]; then

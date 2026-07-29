@@ -1,5 +1,5 @@
 diff --git a/src/blockchain/claim-inspector-contract.ts b/src/blockchain/claim-inspector-contract.ts
-index 2c92325..326fb10 100644
+index 2c92325..12f3be0 100644
 --- a/src/blockchain/claim-inspector-contract.ts
 +++ b/src/blockchain/claim-inspector-contract.ts
 @@ -12,12 +12,19 @@ const childLogger = baseLogger.child(
@@ -9,7 +9,7 @@ index 2c92325..326fb10 100644
 +  const claimInspectorAddress = SERVICE_CONFIG.CLAIM_INSPECTOR_CONTRACT_ADDRESS;
 +  if (!claimInspectorAddress) {
 +    throw new Error(
-+      "CLAIM_INSPECTOR_CONTRACT_ADDRESS is not set (deploy PoRepMarketClaimInspector via just porep-market deploy --helpers-only)",
++      "CLAIM_INSPECTOR_CONTRACT_ADDRESS is not set; deploy PoRepMarketClaimInspector or leave unset to skip claim detail sync",
 +    );
 +  }
 +
@@ -24,7 +24,7 @@ index 2c92325..326fb10 100644
      functionName: "getClaimForDeal",
      args: [onChainDealId],
 diff --git a/src/jobs/sync-deal-job.ts b/src/jobs/sync-deal-job.ts
-index 9153a80..a4046d2 100644
+index 2be768c..78e1b29 100644
 --- a/src/jobs/sync-deal-job.ts
 +++ b/src/jobs/sync-deal-job.ts
 @@ -1,4 +1,5 @@
@@ -33,61 +33,46 @@ index 9153a80..a4046d2 100644
  import {
    getAllocationIdsPerDealFromDCEvidenceContract,
    getClaimIdsPerDealFromDCEvidenceContract,
-@@ -145,31 +146,37 @@ export async function syncDealsJob() {
+@@ -125,21 +126,27 @@ export async function syncDealsJob() {
          );
  
-         if (requiredDealAllocations.length) {
+         if (allocationIds.length) {
 -          syncDealLogger.info(
 -            `Fetching claims info for client ${deal.client} from deal inspector contract...`,
 -          );
 -
--          const claimsInfoFromDealInspectorContract =
--            await getAllClaimsFromClaimInspectorContract(
--              porepMarketContractDealId,
+-          const [claimIds, matchedClaims] =
+-            await getAllClaimsFromClaimInspectorContract(dealId);
+-
+-          claims = matchedClaims.map((claim, index) => ({
+-            ...claim,
+-            claimId: claimIds[index],
+-          }));
+-
+-          syncDealLogger.info(
+-            `Fetched claims info for deal ${dealId} from Deal Inspector contract, total success claims count: ${claims.length}`,
+-          );
 +          if (!SERVICE_CONFIG.CLAIM_INSPECTOR_CONTRACT_ADDRESS) {
 +            syncDealLogger.warn(
-+              `CLAIM_INSPECTOR_CONTRACT_ADDRESS unset; skipping claim details for deal ${porepMarketContractDealId}`,
++              `CLAIM_INSPECTOR_CONTRACT_ADDRESS unset; skipping claim details for deal ${dealId}`,
 +            );
 +          } else {
 +            syncDealLogger.info(
 +              `Fetching claims info for client ${deal.client} from deal inspector contract...`,
-             );
- 
--          syncDealLogger.info(
--            `Fetched claims info for deal ${porepMarketContractDealId} from Deal Inspector contract, total success claims count: ${claimsInfoFromDealInspectorContract[1].length}`,
--          );
-+            const claimsInfoFromDealInspectorContract =
-+              await getAllClaimsFromClaimInspectorContract(
-+                porepMarketContractDealId,
-+              );
- 
--          const claimIds = claimsInfoFromDealInspectorContract[0];
-+            syncDealLogger.info(
-+              `Fetched claims info for deal ${porepMarketContractDealId} from Deal Inspector contract, total success claims count: ${claimsInfoFromDealInspectorContract[1].length}`,
 +            );
- 
--          // get the matched claims from the helper contract
--          matchedClaims = claimsInfoFromDealInspectorContract[1].map(
--            (claim, index) => ({
--              ...claim,
--              claimId: claimIds[index],
--            }),
--          );
-+            const claimIds = claimsInfoFromDealInspectorContract[0];
 +
-+            // get the matched claims from the helper contract
-+            matchedClaims = claimsInfoFromDealInspectorContract[1].map(
-+              (claim, index) => ({
-+                ...claim,
-+                claimId: claimIds[index],
-+              }),
++            const [claimIds, matchedClaims] =
++              await getAllClaimsFromClaimInspectorContract(dealId);
++
++            claims = matchedClaims.map((claim, index) => ({
++              ...claim,
++              claimId: claimIds[index],
++            }));
++
++            syncDealLogger.info(
++              `Fetched claims info for deal ${dealId} from Deal Inspector contract, total success claims count: ${claims.length}`,
 +            );
- 
--          dealIdAllocationsMap[porepMarketContractDealIdStr].claims =
--            matchedClaims;
-+            dealIdAllocationsMap[porepMarketContractDealIdStr].claims =
-+              matchedClaims;
 +          }
          }
+       }
  
-         dealIdAllocationsMap[porepMarketContractDealIdStr].allocationIds =

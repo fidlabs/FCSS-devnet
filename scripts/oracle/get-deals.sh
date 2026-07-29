@@ -2,7 +2,7 @@
 # List deals from the local filecoin-oracle-service HTTP API (GET /deals).
 #
 # Prerequisites:
-#   - oracle app running (just oracle start / just oracle up)
+#   - oracle app running (just oracle up)
 #
 # Usage:
 #   ./scripts/oracle/get-deals.sh

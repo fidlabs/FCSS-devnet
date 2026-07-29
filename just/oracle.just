@@ -9,18 +9,10 @@ default:
 patch:
     ./scripts/oracle/patch.sh
 
-# Write .env from Curio + porep-market V2 deployment (requires just porep-market deploy).
-init *args:
-    ./scripts/oracle/init.sh {{args}}
-
-# docker compose up (Postgres) + prisma schema, then npm run start (foreground).
-up:
-    ./scripts/oracle/up.sh
-    ./scripts/oracle/start.sh
-
-# Build if needed and run `npm run start` (foreground).
-start:
-    ./scripts/oracle/start.sh
+# Patches + .env/build + Postgres/Prisma + npm run start (foreground).
+# Pass flags through (e.g. just oracle up --force).
+up *args:
+    ./scripts/oracle/up.sh --force {{args}}
 
 # GET /deals from the running oracle API (optional: --state --page --limit).
 get-deals *args:

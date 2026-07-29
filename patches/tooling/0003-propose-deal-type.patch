@@ -1,0 +1,216 @@
+diff --git a/cli/commands/client/propose_deal_from_manifest.py b/cli/commands/client/propose_deal_from_manifest.py
+index 8032855..bac0a76 100644
+--- a/cli/commands/client/propose_deal_from_manifest.py
++++ b/cli/commands/client/propose_deal_from_manifest.py
+@@ -6,8 +6,13 @@ from cli.commands import utils as commands_utils
+ from cli.commands.client import _utils as client_utils
+ from cli.commands.client._client import client_signer, client_address
+ from cli.services.contracts.erc20_contract import ERC20Contract
+-from cli.services.contracts.porep_market import PoRepMarket
+-from cli.services.contracts.porep_market import PoRepMarketDealRequest, PoRepMarketDealState, PoRepMarketSLIThresholds
++from cli.services.contracts.porep_market import (
++    PoRepMarket,
++    PoRepMarketDealRequest,
++    PoRepMarketDealState,
++    PoRepMarketDealType,
++    PoRepMarketSLIThresholds,
++)
+ from cli.services.contracts.usdc_token import USDCToken
+ from cli.services.web3_service import Web3Service, EthAddress
+ 
+@@ -21,7 +26,8 @@ def _propose_deal_from_manifest(manifest_url: str,
+                                 duration_months: int,
+                                 latency_ms: int,
+                                 indexing_pct: int,
+-                                payment_token_address: EthAddress):
++                                payment_token_address: EthAddress,
++                                deal_type: PoRepMarketDealType = PoRepMarketDealType.PRIVATE):
+     #
+     MBPS_TO_BYTES_PER_SECOND = 125_000  # 1 Mbps = 10^6 bits/s / 8 = 125 000 bytes/s
+ 
+@@ -45,6 +51,7 @@ def _propose_deal_from_manifest(manifest_url: str,
+         manifest_location=manifest_url,
+         payment_token_address=payment_token_address,
+         duration_days=duration_months * 30,  # PoRep Market smart contracts assumes month == 30 days
++        deal_type=deal_type,
+         required_slis=PoRepMarketSLIThresholds(
+             retrievability_bps=retrievability_bps,
+             bandwidth_bytes_per_second=bandwidth_mbps * MBPS_TO_BYTES_PER_SECOND,
+@@ -111,6 +118,10 @@ def _propose_deal_from_manifest(manifest_url: str,
+               help="IPNI indexing guarantee in percentage; 0 means \"don't care\".")
+ @click.option("--payment-token", envvar="USDC_TOKEN", required=True,
+               help="Address of the ERC20 token to pay with.  [default: USDC_TOKEN env var]")
++@click.option("--deal-type", "deal_type_name",
++              type=click.Choice(["private", "public"], case_sensitive=False),
++              default="private", show_default=True,
++              help="PoRepMarket deal type (private=20, public=10).")
+ def propose_deal_from_manifest(manifest_url: str,
+                                retrievability_bps: int,
+                                bandwidth_mbps: int,
+@@ -118,7 +129,8 @@ def propose_deal_from_manifest(manifest_url: str,
+                                duration_months: int,
+                                latency_ms: int,
+                                indexing_pct: int,
+-                               payment_token: str):
++                               payment_token: str,
++                               deal_type_name: str):
+     """
+     Interactively propose a deal from MANIFEST_URL with the specified parameters.
+ 
+@@ -137,7 +149,8 @@ def propose_deal_from_manifest(manifest_url: str,
+                                 duration_months,
+                                 latency_ms,
+                                 indexing_pct,
+-                                EthAddress(payment_token))
++                                EthAddress(payment_token),
++                                PoRepMarketDealType.from_web3(deal_type_name))
+ 
+ 
+ # TODO LATER remove me
+diff --git a/cli/services/contracts/abi/PoRepMarket.json b/cli/services/contracts/abi/PoRepMarket.json
+index f5e892d..51e1101 100644
+--- a/cli/services/contracts/abi/PoRepMarket.json
++++ b/cli/services/contracts/abi/PoRepMarket.json
+@@ -298,6 +298,11 @@
+                         "type": "address",
+                         "internalType": "address"
+                     },
++                    {
++                        "name": "dealType",
++                        "type": "uint8",
++                        "internalType": "uint8"
++                    },
+                     {
+                         "name": "validator",
+                         "type": "address",
+@@ -736,6 +741,11 @@
+                         "type": "address",
+                         "internalType": "address"
+                     },
++                    {
++                        "name": "dealType",
++                        "type": "uint8",
++                        "internalType": "uint8"
++                    },
+                     {
+                         "name": "validator",
+                         "type": "address",
+@@ -1155,6 +1165,11 @@
+                         "type": "uint32",
+                         "internalType": "uint32"
+                     },
++                    {
++                        "name": "dealType",
++                        "type": "uint8",
++                        "internalType": "uint8"
++                    },
+                     {
+                         "name": "requiredSLIs",
+                         "type": "tuple",
+diff --git a/cli/services/contracts/porep_market.py b/cli/services/contracts/porep_market.py
+index b15c74f..2fa2c99 100644
+--- a/cli/services/contracts/porep_market.py
++++ b/cli/services/contracts/porep_market.py
+@@ -29,6 +29,39 @@ class PoRepMarketSLIThresholds:
+         )
+ 
+ 
++
++# @title Deal Type
++# @notice Gapped deal type codes (see porep-market DealType.sol).
++class PoRepMarketDealType(enum.Enum):
++    NONE = 0
++    PUBLIC = 10
++    PRIVATE = 20
++
++    def __str__(self):
++        return self.name
++
++    def __repr__(self):
++        return self.name
++
++    @staticmethod
++    def to_string_list():
++        return [t.name for t in PoRepMarketDealType if t is not PoRepMarketDealType.NONE]
++
++    @staticmethod
++    def from_web3(s: str | int | None) -> "PoRepMarketDealType":
++        if s is None or s == "":
++            raise ValueError(f"Invalid deal type: {s}")
++
++        raw = str(s).strip().lower()
++        if raw in ("0", "none"):
++            return PoRepMarketDealType.NONE
++        if raw in ("10", "public"):
++            return PoRepMarketDealType.PUBLIC
++        if raw in ("20", "private"):
++            return PoRepMarketDealType.PRIVATE
++        raise ValueError(f"Invalid deal type: {s}")
++
++
+ # @notice DealRequest struct represents the client's request for a storage deal
+ # @param manifestHash commitment for piece set
+ # @param requestedSizeBytes requested data size in bytes
+@@ -45,10 +78,13 @@ class PoRepMarketDealRequest:
+     manifest_location: str
+     payment_token_address: EthAddress
+     duration_days: int  # Client-facing input; converted once before storage
++    deal_type: PoRepMarketDealType
+     required_slis: PoRepMarketSLIThresholds
+ 
+     def __post_init__(self):
+         self.payment_token_address = EthAddress(self.payment_token_address)
++        if not isinstance(self.deal_type, PoRepMarketDealType):
++            self.deal_type = PoRepMarketDealType.from_web3(self.deal_type)
+ 
+     @staticmethod
+     def from_web3(data) -> "PoRepMarketDealRequest":
+@@ -63,7 +99,8 @@ class PoRepMarketDealRequest:
+             manifest_location=data[3],
+             payment_token_address=EthAddress(data[4]),
+             duration_days=int(data[5]),
+-            required_slis=PoRepMarketSLIThresholds.from_web3(data[6])
++            deal_type=PoRepMarketDealType.from_web3(data[6]),
++            required_slis=PoRepMarketSLIThresholds.from_web3(data[7])
+         )
+ 
+ 
+@@ -126,6 +163,7 @@ class PoRepMarketDeal:
+     offer_id: int
+     state: PoRepMarketDealState
+     evidence_adapter_address: EthAddress
++    deal_type: PoRepMarketDealType
+     validator_address: EthAddress
+     rail_id: int
+     proposed_at_epoch: int = 0
+@@ -135,6 +173,8 @@ class PoRepMarketDeal:
+         self.client_address = EthAddress(self.client_address)
+         self.validator_address = EthAddress(self.validator_address)
+         self.evidence_adapter_address = EthAddress(self.evidence_adapter_address)
++        if not isinstance(self.deal_type, PoRepMarketDealType):
++            self.deal_type = PoRepMarketDealType.from_web3(self.deal_type)
+ 
+     @staticmethod
+     def from_web3(data, expected_deal_id: int | None = None) -> "PoRepMarketDeal":
+@@ -152,9 +192,10 @@ class PoRepMarketDeal:
+             offer_id=int(data[3]),
+             state=PoRepMarketDealState.from_web3(data[4]),
+             evidence_adapter_address=EthAddress(data[5]),
+-            validator_address=EthAddress(data[6]),
+-            rail_id=int(data[7]),
+-            proposed_at_epoch=int(data[8]) if len(data) > 8 else 0,
++            deal_type=PoRepMarketDealType.from_web3(data[6]),
++            validator_address=EthAddress(data[7]),
++            rail_id=int(data[8]),
++            proposed_at_epoch=int(data[9]) if len(data) > 9 else 0,
+         )
+ 
+ 
+@@ -321,6 +362,7 @@ class PoRepMarket(ContractService):
+                 request.manifest_location,
+                 request.payment_token_address,
+                 request.duration_days,
++                int(request.deal_type.value),
+                 (slis.retrievability_bps, slis.bandwidth_bytes_per_second, slis.latency_ms, slis.indexing_pct)
+             )),
+             signer

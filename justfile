@@ -17,14 +17,12 @@ init:
     just tooling init
     just oracle patch
 
-# Compose up + Curio config + porep deploy + SP wiring + oracle Postgres/schema
-# (oracle app is separate: just oracle start / just oracle up)
+# Compose up + Curio config + porep deploy + SP wiring + oracle (init/DB/start)
 up:
     just curio up
     just porep-market deploy
     just porep-market up
-    just oracle init --force
-    ./scripts/oracle/up.sh
+    just oracle up
 
 down:
     just oracle down

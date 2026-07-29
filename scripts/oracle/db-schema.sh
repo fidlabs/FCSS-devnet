@@ -2,8 +2,8 @@
 # npm ci (if needed) + prisma generate + prisma db push for filecoin-oracle-service.
 #
 # Prerequisites:
-#   - just oracle init (.env with DATABASE_URL)
-#   - Postgres up (just oracle up, or docker compose in the submodule)
+#   - scripts/oracle/up.sh has written .env with DATABASE_URL (or equivalent)
+#   - Postgres up (docker compose in the submodule / just oracle up)
 #
 # Usage:
 #   ./scripts/oracle/db-schema.sh

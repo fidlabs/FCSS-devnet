@@ -1,110 +1,4 @@
-diff --git a/src/blockchain/porep-market.contract.ts b/src/blockchain/porep-market.contract.ts
-index 2cbb0f4..ad68e60 100644
---- a/src/blockchain/porep-market.contract.ts
-+++ b/src/blockchain/porep-market.contract.ts
-@@ -11,6 +11,7 @@ import {
-   PorepMarketContractDealView,
- } from "../utils/types";
- import { POREP_MARKET_CONTRACT_ABI } from "./abis/porep-market-abi";
-+import { POREP_MARKET_VIEW_HELPER_ABI } from "./abis/porep-market-view-helper-abi";
- import {
-   getRpcClient,
-   getWalletClient,
-@@ -54,12 +55,12 @@ export async function getDealsFromPoRepMarketContract(): Promise<
-     SERVICE_CONFIG.POREP_MARKET_CONTRACT_ADDRESS) as Address;
- 
-   do {
--    const [pageDealViews, total] = await rpcClient.readContract({
-+    const [pageDealViews, total] = (await rpcClient.readContract({
-       address: dealViewsAddress,
--      abi: POREP_MARKET_CONTRACT_ABI,
-+      abi: POREP_MARKET_VIEW_HELPER_ABI,
-       functionName: "getDealViews",
-       args: [offset, DEAL_VIEWS_PAGE_SIZE],
--    });
-+    })) as [PorepMarketContractDealView[], bigint];
- 
-     totalDeals = total;
-     dealViews.push(...pageDealViews);
-diff --git a/src/utils/types.ts b/src/utils/types.ts
-index 0ddf55e..f7bdb68 100644
---- a/src/utils/types.ts
-+++ b/src/utils/types.ts
-@@ -190,9 +190,10 @@ export interface PorepMarketContractDealView {
-     evidenceAdapter: Address;
-     validator: Address;
-     railId: bigint;
-+    proposedAtEpoch: bigint;
-   };
-   data: {
--    manifestHash: Address;
-+    manifestHash: `0x${string}`;
-     manifestLocation: string;
-   };
-   requiredSLIs: SLIThresholds;
-@@ -200,13 +201,12 @@ export interface PorepMarketContractDealView {
-     requestedSizeBytes: bigint;
-     durationEpochs: bigint;
-   };
--  timing: {
--    proposedAtEpoch: bigint;
--    expiresAtEpoch: bigint;
--  };
-   service: {
-     serviceStartEpoch: bigint;
-     serviceEndEpoch: bigint;
-+    earlyTerminationEpoch: bigint;
-+    minTimeBetweenSettlementsInEpochs: bigint;
-+    lastSettledEpoch: bigint;
-   };
-   capacity: {
-     reservedBytes: bigint;
-@@ -214,6 +214,7 @@ export interface PorepMarketContractDealView {
-   };
-   payment: {
-     paymentToken: Address;
-+    payee: Address;
-     pricePer32GiBPerMonth: bigint;
-     billed32GiBUnits: bigint;
-     railMaxRatePerEpoch: bigint;
-@@ -224,6 +225,8 @@ export interface PorepMarketContractDealView {
-     lastEvidenceRefreshEpoch: bigint;
-     reasonCode: number;
-     result: number;
-+    checkedClaims: bigint;
-+    totalClaims: bigint;
-   };
- }
- 
-diff --git a/src/jobs/sync-deal-job.ts b/src/jobs/sync-deal-job.ts
-index 05ec43b..9153a80 100644
---- a/src/jobs/sync-deal-job.ts
-+++ b/src/jobs/sync-deal-job.ts
-@@ -185,7 +185,7 @@ export async function syncDealsJob() {
-         return {
-           ...deal,
-           ...dealView.data,
--          ...dealView.timing,
-+          proposedAtEpoch: deal.proposedAtEpoch,
-           ...dealView.service,
-           ...dealView.capacity,
-           validatorContractAddress: deal.validator,
-@@ -195,7 +195,12 @@ export async function syncDealsJob() {
-             requestedSizeBytes: dealView.terms.requestedSizeBytes,
-             durationEpochs: dealView.terms.durationEpochs,
-           },
--          payment: dealView.payment,
-+          payment: {
-+            paymentToken: dealView.payment.paymentToken,
-+            pricePer32GiBPerMonth: dealView.payment.pricePer32GiBPerMonth,
-+            billed32GiBUnits: dealView.payment.billed32GiBUnits,
-+            railMaxRatePerEpoch: dealView.payment.railMaxRatePerEpoch,
-+          },
-           requiredSLIs: dealView.requiredSLIs,
-           evidenceStatus: {
-             activeCoveredBytes: dealView.evidenceStatus.activeCoveredBytes,
 diff --git a/src/blockchain/abis/porep-market-view-helper-abi.ts b/src/blockchain/abis/porep-market-view-helper-abi.ts
-new file mode 100644
 new file mode 100644
 index 0000000..4d890aa
 --- /dev/null
@@ -652,3 +546,108 @@ index 0000000..4d890aa
 +    "stateMutability": "nonpayable"
 +  }
 +] as Abi;
+diff --git a/src/blockchain/porep-market.contract.ts b/src/blockchain/porep-market.contract.ts
+index 2cbb0f4..ad68e60 100644
+--- a/src/blockchain/porep-market.contract.ts
++++ b/src/blockchain/porep-market.contract.ts
+@@ -11,6 +11,7 @@ import {
+   PorepMarketContractDealView,
+ } from "../utils/types";
+ import { POREP_MARKET_CONTRACT_ABI } from "./abis/porep-market-abi";
++import { POREP_MARKET_VIEW_HELPER_ABI } from "./abis/porep-market-view-helper-abi";
+ import {
+   getRpcClient,
+   getWalletClient,
+@@ -54,12 +55,12 @@ export async function getDealsFromPoRepMarketContract(): Promise<
+     SERVICE_CONFIG.POREP_MARKET_CONTRACT_ADDRESS) as Address;
+ 
+   do {
+-    const [pageDealViews, total] = await rpcClient.readContract({
++    const [pageDealViews, total] = (await rpcClient.readContract({
+       address: dealViewsAddress,
+-      abi: POREP_MARKET_CONTRACT_ABI,
++      abi: POREP_MARKET_VIEW_HELPER_ABI,
+       functionName: "getDealViews",
+       args: [offset, DEAL_VIEWS_PAGE_SIZE],
+-    });
++    })) as [PorepMarketContractDealView[], bigint];
+ 
+     totalDeals = total;
+     dealViews.push(...pageDealViews);
+diff --git a/src/jobs/sync-deal-job.ts b/src/jobs/sync-deal-job.ts
+index 662d9ed..2be768c 100644
+--- a/src/jobs/sync-deal-job.ts
++++ b/src/jobs/sync-deal-job.ts
+@@ -146,7 +146,7 @@ export async function syncDealsJob() {
+       const completedDeal: PorepMarketDeal = {
+         ...deal,
+         ...dealView.data,
+-        ...dealView.timing,
++        proposedAtEpoch: deal.proposedAtEpoch,
+         ...dealView.service,
+         ...dealView.capacity,
+         validatorContractAddress: deal.validator,
+@@ -156,7 +156,12 @@ export async function syncDealsJob() {
+           requestedSizeBytes: dealView.terms.requestedSizeBytes,
+           durationEpochs: dealView.terms.durationEpochs,
+         },
+-        payment: dealView.payment,
++        payment: {
++          paymentToken: dealView.payment.paymentToken,
++          pricePer32GiBPerMonth: dealView.payment.pricePer32GiBPerMonth,
++          billed32GiBUnits: dealView.payment.billed32GiBUnits,
++          railMaxRatePerEpoch: dealView.payment.railMaxRatePerEpoch,
++        },
+         requiredSLIs: dealView.requiredSLIs,
+         evidenceStatus: {
+           activeCoveredBytes: dealView.evidenceStatus.activeCoveredBytes,
+diff --git a/src/utils/types.ts b/src/utils/types.ts
+index 0ddf55e..f7bdb68 100644
+--- a/src/utils/types.ts
++++ b/src/utils/types.ts
+@@ -190,9 +190,10 @@ export interface PorepMarketContractDealView {
+     evidenceAdapter: Address;
+     validator: Address;
+     railId: bigint;
++    proposedAtEpoch: bigint;
+   };
+   data: {
+-    manifestHash: Address;
++    manifestHash: `0x${string}`;
+     manifestLocation: string;
+   };
+   requiredSLIs: SLIThresholds;
+@@ -200,13 +201,12 @@ export interface PorepMarketContractDealView {
+     requestedSizeBytes: bigint;
+     durationEpochs: bigint;
+   };
+-  timing: {
+-    proposedAtEpoch: bigint;
+-    expiresAtEpoch: bigint;
+-  };
+   service: {
+     serviceStartEpoch: bigint;
+     serviceEndEpoch: bigint;
++    earlyTerminationEpoch: bigint;
++    minTimeBetweenSettlementsInEpochs: bigint;
++    lastSettledEpoch: bigint;
+   };
+   capacity: {
+     reservedBytes: bigint;
+@@ -214,6 +214,7 @@ export interface PorepMarketContractDealView {
+   };
+   payment: {
+     paymentToken: Address;
++    payee: Address;
+     pricePer32GiBPerMonth: bigint;
+     billed32GiBUnits: bigint;
+     railMaxRatePerEpoch: bigint;
+@@ -224,6 +225,8 @@ export interface PorepMarketContractDealView {
+     lastEvidenceRefreshEpoch: bigint;
+     reasonCode: number;
+     result: number;
++    checkedClaims: bigint;
++    totalClaims: bigint;
+   };
+ }
+ 
