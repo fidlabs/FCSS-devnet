@@ -13,6 +13,7 @@ Stock CDP targets **mainnet (314)** and **calibnet (314159)**, indexes from a ca
 | `0005-v2-deal-created-finalized-events.patch` | PoRep Market V2: `DealCreated`/`DealFinalized` ABI + indexer; terms via `getDealTerms`/`getDealPayment` |
 | `0006-index-on-startup-every-5-minutes.patch` | Run PoRep/Pay indexers on boot and every 5 minutes (stock is hourly only) |
 | `0007-expose-deal-type-on-po-rep-deals.patch` | Persist on-chain `dealType` (`getDeal`) and return it on `GET /po-rep/deals` (`PUBLIC`/`PRIVATE`) |
+| `0008-filter-deals-by-piece-cid.patch` | Index manifest `pieceCid`s into `po_rep_deal_piece`; `GET /po-rep/deals?pieceCID=` returns matching deals |
 
 ## Justifications
 
@@ -46,4 +47,8 @@ Stock runners only cron hourly. Local demos propose/accept deals and expect orac
 
 V2 stores `dealType` on-chain (`PUBLIC=10`, `PRIVATE=20`) but `DealCreated` does not emit it, and stock CDP has no column/API field. Indexer reads `getDeal`, persists `po_rep_deal.dealType`, and the deals list returns `PUBLIC` / `PRIVATE` (custom uint8 codes as decimal strings). Indexer version bump forces a full reindex after apply.
 
-**TODO (push upstream):** local chain support, configurable origin, `PORT`, optional non-TLS DB, V2 events/`dealType`, and a configurable indexer cadence — then drop the matching patches here.
+### `0008` — Filter deals by `pieceCID`
+
+Contracts never store piece CIDs — they live in the off-chain manifest at `manifestLocation`. Stock CDP only keeps that URL, so it cannot answer “which deals contain this piece?”. On `DealCreated` (and `ManifestLocationUpdated`), the indexer HTTP-fetches the manifest, writes `po_rep_deal_piece(dealId, pieceCid)`, and `GET /po-rep/deals?pieceCID=<commP>` returns the usual deals list filtered to deals that contain that piece. Failures to fetch a manifest log a warning and leave the deal without pieces (deal row still indexes).
+
+**TODO (push upstream):** local chain support, configurable origin, `PORT`, optional non-TLS DB, V2 events/`dealType`, piece indexing + `pieceCID` filter, and a configurable indexer cadence — then drop the matching patches here.
