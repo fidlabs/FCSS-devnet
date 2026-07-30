@@ -1,0 +1,42 @@
+# FCSS-owned CDP compose: main DB + DMOB mock (no SSH tunnel).
+# Host ports remapped away from stock 8037 / conflicts with FCSS Curio indexer.
+name: fcss-cdp
+
+services:
+  cdp-db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "${FCSS_CDP_PG_HOST_PORT:-28037}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - cdp_postgres_data:/var/lib/postgresql/data
+
+  cdp-dmob-db:
+    image: postgres:14
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "${FCSS_CDP_DMOB_PG_HOST_PORT:-28039}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - cdp_dmob_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  cdp_postgres_data:
+  cdp_dmob_postgres_data:

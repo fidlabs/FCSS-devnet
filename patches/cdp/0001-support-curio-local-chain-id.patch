@@ -1,0 +1,33 @@
+diff --git a/src/po-rep-indexer/po-rep-indexer.constants.ts b/src/po-rep-indexer/po-rep-indexer.constants.ts
+index 04ec66b..f265234 100644
+--- a/src/po-rep-indexer/po-rep-indexer.constants.ts
++++ b/src/po-rep-indexer/po-rep-indexer.constants.ts
+@@ -1,4 +1,4 @@
+-import { type Address, isAddress, type Chain } from 'viem';
++import { type Address, defineChain, isAddress, type Chain } from 'viem';
+ import { filecoin, filecoinCalibration } from 'viem/chains';
+ import z from 'zod';
+ 
+@@ -11,9 +11,22 @@ export const ARCHIVE_NODE_CLIENT = 'PO_REP_ARCHIVE_NODE_CLIENT';
+ export const PO_REP_MARKET_CONTRACT_ADDRESS_KEY =
+   'PO_REP_MARKET_CONTRACT_ADDRESS';
+ 
++/** Curio docker-devnet / FCSS local FEVM (LOTUS_CHAIN_ID=31415926). */
++export const filecoinCurioLocal = defineChain({
++  id: 31415926,
++  name: 'Filecoin Curio Local',
++  nativeCurrency: filecoinCalibration.nativeCurrency,
++  rpcUrls: {
++    default: { http: ['http://127.0.0.1:2234/rpc/v1'] },
++  },
++  blockExplorers: filecoinCalibration.blockExplorers,
++  testnet: true,
++});
++
+ export const PO_REP_SUPPORTED_CHAINS = [
+   filecoin,
+   filecoinCalibration,
++  filecoinCurioLocal,
+ ] as const satisfies Chain[];
+ 
+ export const PO_REP_CONFIG_SCHEMA = z.object({

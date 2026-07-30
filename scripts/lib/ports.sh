@@ -28,6 +28,11 @@
 : "${FCSS_ORACLE_PG_HOST_PORT:=28038}"
 : "${FCSS_ORACLE_APP_HOST_PORT:=23100}"
 
+# Compliance Data Platform (CDP)
+: "${FCSS_CDP_PG_HOST_PORT:=28037}"
+: "${FCSS_CDP_DMOB_PG_HOST_PORT:=28039}"
+: "${FCSS_CDP_APP_HOST_PORT:=23300}"
+
 : "${FCSS_HOST:=127.0.0.1}"
 
 : "${RPC_URL:=http://${FCSS_HOST}:${FCSS_LOTUS_RPC_HOST_PORT}/rpc/v1}"
@@ -36,4 +41,8 @@
 : "${CURIO_UI_URL:=http://${FCSS_HOST}:${FCSS_CURIO_UI_HOST_PORT}}"
 : "${ORACLE_DATABASE_URL:=postgresql://postgres:postgres@${FCSS_HOST}:${FCSS_ORACLE_PG_HOST_PORT}/postgres}"
 : "${ORACLE_APP_URL:=http://${FCSS_HOST}:${FCSS_ORACLE_APP_HOST_PORT}}"
+: "${CDP_DATABASE_URL:=postgresql://postgres:postgres@${FCSS_HOST}:${FCSS_CDP_PG_HOST_PORT}/postgres?schema=public&connection_limit=50}"
+: "${CDP_DMOB_DATABASE_URL:=postgresql://postgres:postgres@${FCSS_HOST}:${FCSS_CDP_DMOB_PG_HOST_PORT}/postgres?schema=public&connection_limit=50}"
+: "${CDP_APP_URL:=http://${FCSS_HOST}:${FCSS_CDP_APP_HOST_PORT}}"
+: "${CDP_SERVICE_URL:=${CDP_APP_URL}}"
 : "${DEV_CURIO_EXTERNAL_URL:=http://host.docker.internal:${FCSS_CURIO_MARKET_HOST_PORT}}"

@@ -1,0 +1,14 @@
+diff --git a/src/main.ts b/src/main.ts
+index 5e6a202..91f344d 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -21,7 +21,8 @@ async function bootstrap() {
+   const document = SwaggerModule.createDocument(app, config);
+   SwaggerModule.setup('docs', app, document);
+ 
+-  await app.listen(3000);
++  const port = Number(process.env.PORT || 3000);
++  await app.listen(port);
+ }
+ 
+ bootstrap().catch((err) => {

@@ -4,13 +4,13 @@
 
 PoRep Market **V2 only** (`extern/porep-market` on `main`): `Deploy.s.sol`, SPRegistry offers, `DataCapEvidenceAdapter`, V2 deal lifecycle. No V1 Client / `just devnet_deploy` flows.
 
-Pinned tips (see [`versions.lock.yaml`](versions.lock.yaml)): **Curio v1.28.2**, **porep-market** `main`, **tooling** `feature-v2-adjust-contracts`, **oracle** `v2`.
+Pinned tips (see [`versions.lock.yaml`](versions.lock.yaml)): **Curio v1.28.2**, **porep-market** `main`, **tooling** `feature-v2-adjust-contracts`, **oracle** `v2`, **CDP** [`compliance-data-platform`](https://github.com/fidlabs/compliance-data-platform) `main`.
 
 ## Prerequisites
 
 - Docker
 - `just`, `cast`, `jq`, `curl`, Foundry `forge`
-- Node.js 24+ / `npm` (oracle)
+- Node.js 24+ / `npm` (oracle + CDP)
 - `aria2c` (`make-deal` onboard)
 - Recursive git submodules (`just init` pulls forge libs under `extern/porep-market/lib/`)
 
@@ -21,9 +21,9 @@ git clone https://github.com/fidlabs/FCSS-devnet.git
 cd FCSS-devnet
 
 just init     # submodules, patches, Curio images, tooling venv, pin-verify
-just up       # Curio + V2 deploy + SP wiring + oracle (oracle stays in foreground)
+just up       # Curio + V2 deploy + SP wiring + CDP (bg) + oracle (foreground)
 # other terminal:
-just status   # Lotus / Curio / oracle / ACTIVE / pins
+just status   # Lotus / Curio / CDP / oracle / ACTIVE / pins
 
 # prepare + serve a deal manifest/pieces (see Singularity below), then:
 just make-deal
@@ -35,14 +35,14 @@ Skip steps when iterating: `SKIP_DOCKER=1`, `SKIP_VENV=1`, or `SKIP_PATCH=1` on 
 
 | Command | Safe? | What it does |
 |---------|-------|----------------|
-| `just init` | Yes | Submodules → Curio/tooling/oracle patches → `pin-verify` |
-| `just up` | Yes* | Bring stack up, deploy contracts, wire SP, start oracle |
-| `just status` | Yes | Probe RPC, Curio UI/market/API, oracle, `ACTIVE`, pins |
-| `just down` | Yes | Stop oracle Postgres + Curio compose (data kept) |
+| `just init` | Yes | Submodules → Curio/tooling/oracle/cdp patches → `pin-verify` |
+| `just up` | Yes* | Bring stack up, deploy, wire SP, start CDP (background) + oracle |
+| `just status` | Yes | Probe RPC, Curio, CDP, oracle, `ACTIVE`, pins |
+| `just down` | Yes | Stop oracle + CDP + Curio compose (data kept) |
 | `just reset` | **Destructive** | Wipe chain/DB/envs → then `just up` |
 | `just make-deal …` | Yes | V2 deal pipeline (flags passed through) |
 
-\* `just up` ends in `just oracle up`, which runs the oracle app in the **foreground**.
+\* `just up` starts CDP in the **background**, then ends in `just oracle up` (**foreground**).
 
 ### `just reset` — wipe vs preserve
 
@@ -50,6 +50,7 @@ Skip steps when iterating: `SKIP_DOCKER=1`, `SKIP_VENV=1`, or `SKIP_PATCH=1` on 
 
 - Curio `extern/curio/docker/data` (via `devnet/down`)
 - Oracle Postgres compose state
+- CDP Postgres + DMOB mock compose + Nest pid
 - `extern/porep-market/.deployment/`
 - Generated `.env` files (moved aside to `.env.bak.<UTC>`)
 - Old `.runtime/failures/` (keeps the newest 10)
@@ -77,8 +78,36 @@ FCSS publishes **non-default host ports** so it can sit beside another Curio/Lot
 | Yugabyte YSQL (host) | `25433` |
 | Oracle Postgres | `localhost:28038` |
 | Oracle HTTP | `http://127.0.0.1:23100` |
+| CDP Postgres | `localhost:28037` |
+| CDP DMOB mock Postgres | `localhost:28039` |
+| **CDP HTTP** | [http://127.0.0.1:23300](http://127.0.0.1:23300) (`/docs`, `/version`) |
 
 Override any `FCSS_*_HOST_PORT` / `FCSS_HOST` before sourcing scripts if needed.
+
+## Compliance Data Platform (CDP)
+
+[`extern/compliance-data-platform`](extern/compliance-data-platform) indexes PoRep Market + Filecoin Pay on the local Curio chain and feeds the oracle:
+
+| Oracle use | CDP endpoint |
+|------------|----------------|
+| Settlement (`settledUpTo`) | `GET /filecoin-pay/rails/:railId` |
+| Deal SLI averages | `GET /po-rep/average-sli-data?dealIds=…` |
+
+`just cdp up` (also part of `just up`):
+
+1. Applies [`patches/cdp/`](patches/cdp/) (Curio chain `31415926`, index from genesis, `PORT` env)
+2. Writes `.env` from ACTIVE deploy (market / SPRegistry / FilecoinPay + Lotus RPC)
+3. Starts CDP + DMOB-mock Postgres ([`docker/cdp-compose.yaml`](docker/cdp-compose.yaml))
+4. Seeds DMOB from `ci/dmob-mock-db.sql`, runs Prisma migrate, builds Nest
+5. Starts Nest in the **background** (`.runtime/cdp.pid`, logs `.runtime/cdp.log`)
+
+Oracle `.env` defaults `CDP_SERVICE_URL` to `http://127.0.0.1:23300`. Full Fil+ health checks (ipinfo / Filscan / GitHub) may fail locally; PoRep index + rail/SLI APIs are what matter.
+
+```bash
+just cdp up          # or: just cdp up --foreground
+just cdp logs
+just cdp down
+```
 
 ## Pins (`versions.lock.yaml`)
 
@@ -92,7 +121,7 @@ Checks:
 
 1. Each submodule `HEAD` matches the lock commit  
 2. Parent gitlink matches the lock commit  
-3. `patches/{curio,tooling,oracle}/*.patch` apply cleanly on that commit  
+3. `patches/{curio,tooling,oracle,cdp}/*.patch` apply cleanly on that commit  
 
 **Bump pins:** update submodule gitlinks → refresh patches if needed → rewrite commits in the lockfile → `just pin-verify`.
 
@@ -145,9 +174,10 @@ Orchestration: [`scripts/porep-market/`](scripts/porep-market/) + [`scripts/tool
 | [`porep-market`](extern/porep-market) (**main** / V2) | Market, SPRegistry, DataCapEvidenceAdapter |
 | [`filecoin-porep-market-tooling`](extern/filecoin-porep-market-tooling) (`feature-v2-adjust-contracts`) | Client / SP / admin CLI |
 | [`filecoin-oracle-service`](extern/filecoin-oracle-service) (`v2`) | Settlement / SLI jobs |
+| [`compliance-data-platform`](extern/compliance-data-platform) (`main`) | PoRep/Pay indexer + APIs for oracle settlement/SLI |
 | [`large-paid-retrievals`](https://github.com/fidlabs/large-paid-retrievals) | `sp-proxy` + `retrieval-client` against this devnet |
 
-All four code deps are git submodules under [`extern/`](extern/).
+All five code deps are git submodules under [`extern/`](extern/).
 
 ## Just recipes
 
@@ -155,11 +185,11 @@ Root recipes ([`justfile`](justfile)) compose modules in [`just/`](just/):
 
 | Recipe | Does |
 |--------|------|
-| `just init` | submodule update → curio/tooling/oracle setup → `pin-verify` |
+| `just init` | submodule update → curio/tooling/oracle/cdp patches → `pin-verify` |
 | `just pin-verify` | lockfile vs HEADs/gitlinks + patch `--check` |
-| `just up` | curio up → deploy → SP up → oracle up (foreground) |
+| `just up` | curio up → deploy → SP up → CDP (bg) → oracle (foreground) |
 | `just status` | health probes + ACTIVE + pin-verify (warn) |
-| `just down` | oracle Postgres down + curio down |
+| `just down` | oracle + CDP + curio down |
 | `just reset` | wipe (see above) then `just up` |
 | `just make-deal …` | tooling venv + deal pipeline |
 
@@ -169,16 +199,18 @@ Namespaced:
 - `just porep-market gen-env\|deploy\|up\|tooling-env\|use-deployment`
 - `just tooling patch\|init\|make-deal`
 - `just oracle patch\|up\|get-deals\|logs\|down`
+- `just cdp patch\|up\|logs\|down`
 
 ### Oracle notes
 
 - Cron vars (`TRIGGER_*_CRON`, `SYNC_URL_FINDER_*`) live in `extern/filecoin-oracle-service/.env` (kept across `just oracle up` unless you `--force` without preserving). Override when regenerating, e.g. `TRIGGER_SYNC_DEALS_JOB_INTERVAL_CRON='* * * * *' just oracle up --force`.
-- Not wired locally by default: `CDP_SERVICE_URL`, `URL_FINDER_SERVICE_URL` / `URL_FINDER_AUTH_TOKEN`. Deal sync and `just oracle get-deals` work without them.
+- `CDP_SERVICE_URL` defaults to the local CDP app (`http://127.0.0.1:23300`). Optional still: `URL_FINDER_SERVICE_URL` / `URL_FINDER_AUTH_TOKEN`. Deal sync and `just oracle get-deals` work without URL Finder.
 
 ### Upstream patch TODO
 
 - **Oracle** — [`patches/oracle/`](patches/oracle/): settlement genesis, crons, ViewHelper `getDealViews`, V2 ABI, skip unset claim inspector. Drop once merged to `v2`.
 - **Tooling** — [`patches/tooling/`](patches/tooling/): compose deal view, `submit-evidence`, `proposeDeal` `dealType`. Drop once merged.
+- **CDP** — [`patches/cdp/`](patches/cdp/): Curio chain id `31415926`, genesis origin, `PORT` env. Drop once upstream supports local FEVM.
 - **Curio** — [`patches/curio/`](patches/curio/) are **environmental only** (host ports, IPNI, docker build); not for upstream.
 
 ## Scripts
@@ -198,6 +230,7 @@ Shared libs: [`scripts/lib/`](scripts/lib/) (`common.sh`, `ports.sh`, `runtime.s
 | `scripts/pins/verify.sh` | Lock + patch checks |
 | `scripts/status.sh` | Stack health |
 | `scripts/reset.sh` | Destructive wipe → `just up` |
+| `scripts/cdp/patch.sh` / `up.sh` / `down.sh` | CDP patches + Postgres/DMOB + Nest |
 | `scripts/tooling/init.sh` / `patch.sh` / `make-deal.sh` | Tooling venv + V2 deal path |
 | `scripts/oracle/up.sh` / `patch.sh` / `get-deals.sh` / `db-schema.sh` | Oracle bring-up and queries |
 
@@ -206,8 +239,8 @@ Also: [`contracts/allocator/NoOpMetaAllocator.{sol,json}`](contracts/allocator/)
 ## Typical flow
 
 1. `just init`
-2. `just up` (leave oracle running; use another terminal for the rest)
-3. `just status` — confirm Curio UI at [http://127.0.0.1:24701](http://127.0.0.1:24701) and Lotus RPC
+2. `just up` (CDP background; leave oracle running; use another terminal for the rest)
+3. `just status` — confirm Curio UI at [http://127.0.0.1:24701](http://127.0.0.1:24701), CDP at [http://127.0.0.1:23300/version](http://127.0.0.1:23300/version), and Lotus RPC
 4. Prepare dataset + serve manifest/pieces → `just make-deal`
 5. Optional: `eval "$(just porep-market tooling-env)"` and run [`large-paid-retrievals`](https://github.com/fidlabs/large-paid-retrievals)
 

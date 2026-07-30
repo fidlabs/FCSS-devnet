@@ -32,3 +32,10 @@ submodules:
     commit: d30df2374143f2b8dfc952134777136bcc78878c
     ref: v2
     notes: patches/oracle must apply cleanly.
+
+  compliance-data-platform:
+    path: extern/compliance-data-platform
+    repository: https://github.com/fidlabs/compliance-data-platform.git
+    commit: ee06ccfef7654d5be7eece31ca2f9081c3b5aa24
+    ref: main
+    notes: patches/cdp must apply cleanly (Curio chain 31415926 + genesis origin + PORT).

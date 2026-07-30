@@ -1,0 +1,338 @@
+diff --git a/src/po-rep-indexer/abis/po-rep-market.abi.ts b/src/po-rep-indexer/abis/po-rep-market.abi.ts
+--- a/src/po-rep-indexer/abis/po-rep-market.abi.ts
++++ b/src/po-rep-indexer/abis/po-rep-market.abi.ts
+@@ -297,6 +297,37 @@
+             name: 'manifestLocation',
+             type: 'string',
+             internalType: 'string',
++          },
++        ],
++      },
++    ],
++    stateMutability: 'view',
++  },
++    {
++    type: 'function',
++    name: 'getDealTerms',
++    inputs: [
++      {
++        name: 'dealId',
++        type: 'uint256',
++        internalType: 'uint256',
++      },
++    ],
++    outputs: [
++      {
++        name: 'terms',
++        type: 'tuple',
++        internalType: 'struct PoRepTypes.DealTerms',
++        components: [
++          {
++            name: 'requestedSizeBytes',
++            type: 'uint256',
++            internalType: 'uint256',
++          },
++          {
++            name: 'durationEpochs',
++            type: 'uint64',
++            internalType: 'uint64',
+           },
+         ],
+       },
+@@ -305,6 +336,52 @@
+   },
+   {
+     type: 'function',
++    name: 'getDealPayment',
++    inputs: [
++      {
++        name: 'dealId',
++        type: 'uint256',
++        internalType: 'uint256',
++      },
++    ],
++    outputs: [
++      {
++        name: 'payment',
++        type: 'tuple',
++        internalType: 'struct PoRepTypes.DealPayment',
++        components: [
++          {
++            name: 'paymentToken',
++            type: 'address',
++            internalType: 'address',
++          },
++          {
++            name: 'payee',
++            type: 'address',
++            internalType: 'address',
++          },
++          {
++            name: 'pricePer32GiBPerMonth',
++            type: 'uint256',
++            internalType: 'uint256',
++          },
++          {
++            name: 'billed32GiBUnits',
++            type: 'uint256',
++            internalType: 'uint256',
++          },
++          {
++            name: 'railMaxRatePerEpoch',
++            type: 'uint256',
++            internalType: 'uint256',
++          },
++        ],
++      },
++    ],
++    stateMutability: 'view',
++  },
++{
++    type: 'function',
+     name: 'getDeals',
+     inputs: [],
+     outputs: [
+@@ -911,7 +988,7 @@
+   },
+   {
+     type: 'event',
+-    name: 'DealCompleted',
++    name: 'DealFinalized',
+     inputs: [
+       {
+         name: 'dealId',
+@@ -920,29 +997,17 @@
+         internalType: 'uint256',
+       },
+       {
+-        name: 'client',
++        name: 'validator',
+         type: 'address',
+         indexed: true,
+         internalType: 'address',
+-      },
+-      {
+-        name: 'actualSizeBytes',
+-        type: 'uint256',
+-        indexed: false,
+-        internalType: 'uint256',
+       },
+-      {
+-        name: 'provider',
+-        type: 'uint64',
+-        indexed: true,
+-        internalType: 'CommonTypes.FilActorId',
+-      },
+     ],
+     anonymous: false,
+   },
+   {
+     type: 'event',
+-    name: 'DealProposalCreated',
++    name: 'DealCreated',
+     inputs: [
+       {
+         name: 'dealId',
+@@ -966,7 +1031,7 @@
+         name: 'requirements',
+         type: 'tuple',
+         indexed: false,
+-        internalType: 'struct SLITypes.SLIThresholds',
++        internalType: 'struct SharedTypes.SLIThresholds',
+         components: [
+           {
+             name: 'retrievabilityBps',
+@@ -974,9 +1039,9 @@
+             internalType: 'uint16',
+           },
+           {
+-            name: 'bandwidthMbps',
+-            type: 'uint16',
+-            internalType: 'uint16',
++            name: 'bandwidthBytesPerSecond',
++            type: 'uint64',
++            internalType: 'uint64',
+           },
+           {
+             name: 'latencyMs',
+@@ -989,6 +1054,12 @@
+             internalType: 'uint8',
+           },
+         ],
++      },
++      {
++        name: 'manifestHash',
++        type: 'bytes32',
++        indexed: false,
++        internalType: 'bytes32',
+       },
+       {
+         name: 'manifestLocation',
+diff --git a/src/po-rep-indexer/runners/po-rep-providers-and-deals.runner.ts b/src/po-rep-indexer/runners/po-rep-providers-and-deals.runner.ts
+--- a/src/po-rep-indexer/runners/po-rep-providers-and-deals.runner.ts
++++ b/src/po-rep-indexer/runners/po-rep-providers-and-deals.runner.ts
+@@ -60,10 +60,10 @@
+ ] as const satisfies AbiEvent[];
+ 
+ const poRepMarketEvents = [
+-  getAbiItem({ abi: PoRepMarketABI, name: 'DealProposalCreated' }),
++  getAbiItem({ abi: PoRepMarketABI, name: 'DealCreated' }),
+   getAbiItem({ abi: PoRepMarketABI, name: 'DealAccepted' }),
+   getAbiItem({ abi: PoRepMarketABI, name: 'RailIdUpdated' }),
+-  getAbiItem({ abi: PoRepMarketABI, name: 'DealCompleted' }),
++  getAbiItem({ abi: PoRepMarketABI, name: 'DealFinalized' }),
+   getAbiItem({ abi: PoRepMarketABI, name: 'DealTerminated' }),
+   getAbiItem({ abi: PoRepMarketABI, name: 'DealRejected' }),
+   getAbiItem({ abi: PoRepMarketABI, name: 'ManifestLocationUpdated' }),
+@@ -85,7 +85,8 @@
+   }
+ 
+   protected getVersion(): number {
+-    return 2;
++    // Bump: V2 DealCreated/DealFinalized + terms via getDealTerms/getDealPayment.
++    return 3;
+   }
+ 
+   protected getBatchBlockSize(): bigint {
+@@ -235,7 +236,7 @@
+   private async prepareDealsCreations(
+     logs: Logs,
+   ): Promise<PrismaPromise<unknown>[]> {
+-    const dealProposalLogs = logs
++    const dealCreatedLogs = logs
+       .filter((log) => {
+         return isAddressEqual(
+           log.address,
+@@ -243,34 +244,47 @@
+         );
+       })
+       .filter((log) => {
+-        return log.eventName === 'DealProposalCreated';
++        return log.eventName === 'DealCreated';
+       });
+ 
+-    if (dealProposalLogs.length === 0) {
++    if (dealCreatedLogs.length === 0) {
+       return [];
+     }
+ 
+-    const newDealIds = dealProposalLogs.map((log) => log.args.dealId);
++    const market = this.configService.get('PO_REP_MARKET_CONTRACT_ADDRESS');
++    const termsInputs: DealTermsCreationInput[] = [];
+ 
+-    // Fortunately deal terms don't change so we can query current state.
+-    // Ideally 'DealProposalCreated' event should include full deal terms so
+-    // this can be avoided.
+-    const allDeals = await this.recentNodeClient.readContract({
+-      address: this.configService.get('PO_REP_MARKET_CONTRACT_ADDRESS'),
+-      abi: PoRepMarketABI,
+-      functionName: 'getDeals',
+-      authorizationList: undefined,
+-    });
++    for (const log of dealCreatedLogs) {
++      const [terms, payment] = await Promise.all([
++        this.recentNodeClient.readContract({
++          address: market,
++          abi: PoRepMarketABI,
++          functionName: 'getDealTerms',
++          args: [log.args.dealId],
++          authorizationList: undefined,
++        }),
++        this.recentNodeClient.readContract({
++          address: market,
++          abi: PoRepMarketABI,
++          functionName: 'getDealPayment',
++          args: [log.args.dealId],
++          authorizationList: undefined,
++        }),
++      ]);
+ 
+-    const dealsTermsMap = allDeals
+-      .filter((deal) => {
+-        return newDealIds.includes(deal.dealId);
+-      })
+-      .map((deal) => [deal.dealId, deal.terms] as const);
++      // Filecoin ~30s epochs → 2880 epochs/day.
++      const durationDays = Number(terms.durationEpochs / 2880n);
++      termsInputs.push({
++        deal_id: log.args.dealId,
++        deal_size_bytes: terms.requestedSizeBytes,
++        price_per_sector_per_month: payment.pricePer32GiBPerMonth.toString(),
++        duration_days: durationDays,
++      });
++    }
+ 
+     return [
+       this.prismaService.po_rep_deal.createMany({
+-        data: dealProposalLogs.map<DealCreationInput>((log) => {
++        data: dealCreatedLogs.map<DealCreationInput>((log) => {
+           return {
+             dealId: log.args.dealId,
+             providerId: log.args.provider,
+@@ -283,22 +297,21 @@
+         }),
+       }),
+       this.prismaService.po_rep_deal_requirements.createMany({
+-        data: dealProposalLogs.map<DealRequirementsCreationInput>((log) => {
++        data: dealCreatedLogs.map<DealRequirementsCreationInput>((log) => {
++          const req = log.args.requirements;
++          // CDP schema stores Mbps; V2 emits bytes/sec (1 Mbps = 125000 B/s).
++          const bandwidthMbps = Number(req.bandwidthBytesPerSecond / 125000n);
+           return {
+             dealId: log.args.dealId,
+-            ...log.args.requirements,
++            retrievabilityBps: req.retrievabilityBps,
++            bandwidthMbps: bandwidthMbps,
++            latencyMs: req.latencyMs,
++            indexingPct: req.indexingPct,
+           };
+         }),
+       }),
+       this.prismaService.po_rep_deal_terms.createMany({
+-        data: dealsTermsMap.map<DealTermsCreationInput>(([dealId, terms]) => {
+-          return {
+-            deal_id: dealId,
+-            deal_size_bytes: terms.dealSizeBytes,
+-            price_per_sector_per_month: terms.pricePerSectorPerMonth.toString(),
+-            duration_days: terms.durationDays,
+-          };
+-        }),
++        data: termsInputs,
+       }),
+     ];
+   }
+@@ -310,6 +323,7 @@
+           log.address,
+           this.configService.get('PO_REP_MARKET_CONTRACT_ADDRESS'),
+         ) &&
++        log.eventName !== 'DealCreated' &&
+         poRepMarketEvents
+           .map<string>((item) => item.name)
+           .includes(log.eventName)
+@@ -348,7 +362,7 @@
+         return (
+           log.eventName === 'DealRejected' ||
+           log.eventName === 'DealAccepted' ||
+-          log.eventName === 'DealCompleted' ||
++          log.eventName === 'DealFinalized' ||
+           log.eventName === 'DealTerminated'
+         );
+       });
+@@ -488,7 +502,7 @@
+           ...previousUpdateInput,
+           railId: log.args.railId,
+         };
+-      case 'DealCompleted':
++      case 'DealFinalized':
+         return {
+           ...previousUpdateInput,
+           state: PoRepDealState.COMPLETED,
+@@ -521,7 +535,7 @@
+         return PoRepDealState.REJECTED;
+       case 'DealAccepted':
+         return PoRepDealState.ACCEPTED;
+-      case 'DealCompleted':
++      case 'DealFinalized':
+         return PoRepDealState.COMPLETED;
+       case 'DealTerminated':
+         return PoRepDealState.TERMINATED;

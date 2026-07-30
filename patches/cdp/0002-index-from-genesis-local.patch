@@ -1,0 +1,30 @@
+diff --git a/src/po-rep-indexer/runners/filecoin-pay-indexer.runner.ts b/src/po-rep-indexer/runners/filecoin-pay-indexer.runner.ts
+index 1573b39..0dd17bd 100644
+--- a/src/po-rep-indexer/runners/filecoin-pay-indexer.runner.ts
++++ b/src/po-rep-indexer/runners/filecoin-pay-indexer.runner.ts
+@@ -40,9 +40,8 @@ export class FilecoinPayIndexerRunner extends AbstractPoRepIndexerRunner<EventTy
+   }
+ 
+   protected getOriginBlock(): bigint {
+-    // We only care about rails and payments created after the creation of
+-    // PoRep contracts
+-    return 5934198n;
++    // FCSS / Curio local: index from genesis (calibnet origin is meaningless locally).
++    return 0n;
+   }
+ 
+   protected getVersion(): number {
+diff --git a/src/po-rep-indexer/runners/po-rep-providers-and-deals.runner.ts b/src/po-rep-indexer/runners/po-rep-providers-and-deals.runner.ts
+index fff7c2d..f1b5a2c 100644
+--- a/src/po-rep-indexer/runners/po-rep-providers-and-deals.runner.ts
++++ b/src/po-rep-indexer/runners/po-rep-providers-and-deals.runner.ts
+@@ -80,7 +80,8 @@ export class PoRepProvidersAndDealsIndexerRunner extends AbstractPoRepIndexerRun
+   }
+ 
+   protected getOriginBlock(): bigint {
+-    return 5934198n;
++    // FCSS / Curio local: index from genesis (calibnet origin is meaningless locally).
++    return 0n;
+   }
+ 
+   protected getVersion(): number {

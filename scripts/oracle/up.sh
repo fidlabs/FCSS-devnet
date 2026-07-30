@@ -149,8 +149,8 @@ if [[ -z "$JOB_TRIGGER_AUTH_TOKEN" ]]; then
   fi
 fi
 
-# CDP / URL Finder are external; empty disables those integrations until set.
-CDP_SERVICE_URL="${CDP_SERVICE_URL:-}"
+# CDP / URL Finder: default CDP to local FCSS CDP app; URL Finder stays optional.
+CDP_SERVICE_URL="${CDP_SERVICE_URL:-${CDP_APP_URL}}"
 URL_FINDER_SERVICE_URL="${URL_FINDER_SERVICE_URL:-}"
 URL_FINDER_AUTH_TOKEN="${URL_FINDER_AUTH_TOKEN:-}"
 

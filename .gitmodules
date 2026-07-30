@@ -15,3 +15,9 @@
 	url = https://github.com/fidlabs/filecoin-oracle-service.git
 	branch = v2
 	ignore = dirty
+[submodule "extern/compliance-data-platform"]
+	path = extern/compliance-data-platform
+	url = https://github.com/fidlabs/compliance-data-platform.git
+	branch = main
+	ignore = dirty
+	ignore = dirty

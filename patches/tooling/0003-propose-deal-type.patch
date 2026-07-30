@@ -68,7 +68,7 @@ index 8032855..bac0a76 100644
  
  # TODO LATER remove me
 diff --git a/cli/services/contracts/abi/PoRepMarket.json b/cli/services/contracts/abi/PoRepMarket.json
-index f5e892d..51e1101 100644
+index f5e892d..cb4f9aa 100644
 --- a/cli/services/contracts/abi/PoRepMarket.json
 +++ b/cli/services/contracts/abi/PoRepMarket.json
 @@ -298,6 +298,11 @@
@@ -95,7 +95,19 @@ index f5e892d..51e1101 100644
                      {
                          "name": "validator",
                          "type": "address",
-@@ -1155,6 +1165,11 @@
+@@ -807,6 +817,11 @@
+                         "type": "address",
+                         "internalType": "address"
+                     },
++                    {
++                        "name": "dealType",
++                        "type": "uint8",
++                        "internalType": "uint8"
++                    },
+                     {
+                         "name": "validator",
+                         "type": "address",
+@@ -1155,6 +1170,11 @@
                          "type": "uint32",
                          "internalType": "uint32"
                      },

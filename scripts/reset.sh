@@ -36,10 +36,11 @@ backup_env() {
   log "moved ${f#"$REPO_ROOT"/} → ${bak#"$REPO_ROOT"/}"
 }
 
-log "FCSS reset: tearing down oracle + curio (wipes Curio docker/data)"
+log "FCSS reset: tearing down oracle + cdp + curio (wipes Curio docker/data)"
 (
   cd "$REPO_ROOT"
   just oracle down || true
+  just cdp down || true
   just curio down
 )
 
@@ -50,6 +51,7 @@ log "backing up generated env files"
 backup_env "${POREP_MARKET_DIR}/.env"
 backup_env "${TOOLING_DIR}/.env"
 backup_env "${ORACLE_DIR}/.env"
+backup_env "${CDP_DIR}/.env"
 
 log "pruning old .runtime/failures (keep 10)"
 runtime_prune_failures 10
