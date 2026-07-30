@@ -1,0 +1,86 @@
+diff --git a/src/service/erc20-token-info/erc20-token-info.service.ts b/src/service/erc20-token-info/erc20-token-info.service.ts
+index 94cb9a0..cc39dc3 100644
+--- a/src/service/erc20-token-info/erc20-token-info.service.ts
++++ b/src/service/erc20-token-info/erc20-token-info.service.ts
+@@ -1,5 +1,5 @@
+ import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
+-import { Inject, Injectable } from '@nestjs/common';
++import { Inject, Injectable, Logger } from '@nestjs/common';
+ import { PoRepPublicClient, RECENT_NODE_CLIENT } from 'src/po-rep-indexer';
+ import { Cacheable } from 'src/utils/cacheable';
+ import {
+@@ -15,8 +15,14 @@ const erc20Abi = parseAbi([
+   'function decimals() view returns (uint8)',
+ ]);
+ 
++/** Fallback when the address has no code / is not ERC-20 (stale CDP rows after chain reset). */
++const UNKNOWN_TOKEN_SYMBOL = 'UNKNOWN';
++const UNKNOWN_TOKEN_DECIMALS = 18;
++
+ @Injectable()
+ export class ERC20TokenInfoService {
++  private readonly logger = new Logger(ERC20TokenInfoService.name);
++
+   constructor(
+     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+     @Inject(RECENT_NODE_CLIENT)
+@@ -31,14 +37,21 @@ export class ERC20TokenInfoService {
+       return this.recentNodeClient.chain.nativeCurrency.symbol;
+     }
+ 
+-    const symbol = await this.recentNodeClient.readContract({
+-      authorizationList: undefined,
+-      address: tokenAddress,
+-      abi: erc20Abi,
+-      functionName: 'symbol',
+-    });
+-
+-    return symbol;
++    try {
++      return await this.recentNodeClient.readContract({
++        authorizationList: undefined,
++        address: tokenAddress,
++        abi: erc20Abi,
++        functionName: 'symbol',
++      });
++    } catch (error) {
++      this.logger.warn(
++        `ERC-20 symbol() failed for ${tokenAddress}; using ${UNKNOWN_TOKEN_SYMBOL}: ${
++          error instanceof Error ? error.message : String(error)
++        }`,
++      );
++      return UNKNOWN_TOKEN_SYMBOL;
++    }
+   }
+ 
+   @Cacheable() // Cache permanently, decimals do not change
+@@ -49,14 +62,21 @@ export class ERC20TokenInfoService {
+       return this.recentNodeClient.chain.nativeCurrency.decimals;
+     }
+ 
+-    const decimals = await this.recentNodeClient.readContract({
+-      authorizationList: undefined,
+-      address: tokenAddress,
+-      abi: erc20Abi,
+-      functionName: 'decimals',
+-    });
+-
+-    return decimals;
++    try {
++      return await this.recentNodeClient.readContract({
++        authorizationList: undefined,
++        address: tokenAddress,
++        abi: erc20Abi,
++        functionName: 'decimals',
++      });
++    } catch (error) {
++      this.logger.warn(
++        `ERC-20 decimals() failed for ${tokenAddress}; using ${UNKNOWN_TOKEN_DECIMALS}: ${
++          error instanceof Error ? error.message : String(error)
++        }`,
++      );
++      return UNKNOWN_TOKEN_DECIMALS;
++    }
+   }
+ 
+   private assertValidTokenAddress(

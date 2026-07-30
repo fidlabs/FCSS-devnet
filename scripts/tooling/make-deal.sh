@@ -84,7 +84,7 @@ Options:
   --deal-type TYPE                private|public (default: ${DEAL_TYPE})
   --deal-id N                     Skip propose; resume from this deal id
   --onboard-dir DIR               Directory for sp onboard-data (default: ./deal-<id>)
-  --piece-base-url URL            Piece CAR base URL for Curio add-url (default: ${PIECE_BASE_URL})
+  --piece-base-url URL            Piece CAR base for Curio add-url and host onboard-data (default: ${PIECE_BASE_URL})
   --skip-onboard                  Stop after make-allocations
   --skip-claim                    Skip claim-allocations / add-url (still onboard unless --skip-onboard)
   --wait-claims                   Wait for allocations → submit-evidence → claims (default)
@@ -511,6 +511,26 @@ attach_curio_piece_urls() {
   return 0
 }
 
+# Host-side aria2 download endpoint derived from PIECE_BASE_URL (Curio URL).
+# Maps host.docker.internal → 127.0.0.1 so onboard-data on the host hits the published port.
+onboard_download_args_from_piece_base() {
+  local url="$1"
+  local host port rest
+  rest="${url#http://}"
+  rest="${rest#https://}"
+  host="${rest%%/*}"
+  if [[ "$host" == *:* ]]; then
+    port="${host##*:}"
+    host="${host%%:*}"
+  else
+    port=7777
+  fi
+  if [[ "$host" == "host.docker.internal" || "$host" == "localhost" ]]; then
+    host="127.0.0.1"
+  fi
+  printf -- '--host\n%s\n--port\n%s\n' "$host" "$port"
+}
+
 # Feed CLI confirms. 'y' is accepted as short for 'yes' by cli.utils.confirm_str.
 run_cli() {
   if [[ "$YES" == true ]]; then
@@ -761,7 +781,8 @@ deal_is_fully_claimed() {
   [[ "$pending" -eq 0 && "$claimed" -gt 0 ]]
 }
 
-# Resume an incomplete deal for this manifest instead of proposing a duplicate.
+# Find an in-flight or completed deal for this manifest (never propose a duplicate —
+# the same manifestHash is already assigned to the SP org → NoOfferMatched).
 find_resumable_deal_for_manifest() {
   local manifest="$1"
   local deal_id state
@@ -770,9 +791,6 @@ find_resumable_deal_for_manifest() {
   state="$(deal_view_jq "$deal_id" '.deal.state')"
   case "$state" in
     PROPOSED|ACCEPTED|ACTIVE)
-      if [[ "$state" == "ACCEPTED" || "$state" == "ACTIVE" ]] && deal_is_fully_claimed "$deal_id"; then
-        return 1
-      fi
       printf '%s\n' "$deal_id"
       return 0
       ;;
@@ -783,14 +801,35 @@ find_resumable_deal_for_manifest() {
 }
 
 onboard_cars_present() {
+  # True only when deal-${id}/ has a manifest + CARs whose piece CIDs match
+  # this deal's unclaimed allocations. A reused deal id after chain reset often
+  # leaves a stale deal-N dir (cars/manifest for a different piece set).
   local deal_id="$1"
   local dir="$2"
-  local manifest_file n cars
+  local manifest_file n cars piece_cid file_size matched=0
   manifest_file="${dir}/manifest_${deal_id}.json"
   [[ -f "$manifest_file" ]] || return 1
-  n="$(jq '[.[].pieces[]?] | length' "$manifest_file")"
+  n="$(jq '[.[].pieces[]?] | length' "$manifest_file" 2>/dev/null || echo 0)"
   cars="$(find "$dir" -maxdepth 1 -name '*.car' 2>/dev/null | wc -l | tr -d '[:space:]')"
-  [[ -n "$n" && "$n" -gt 0 && "$cars" -ge "$n" ]]
+  [[ -n "$n" && "$n" -gt 0 && "$cars" -ge "$n" ]] || return 1
+
+  while IFS=$'\t' read -r _ piece_cid || [[ -n "$piece_cid" ]]; do
+    piece_cid="$(printf '%s' "$piece_cid" | tr -d '[:space:]')"
+    [[ -n "$piece_cid" ]] || continue
+    file_size="$(
+      jq -r --arg cid "$piece_cid" '
+        [.[].pieces[]? | select(.pieceCid == $cid) | .fileSize] | first // empty
+      ' "$manifest_file"
+    )"
+    [[ -n "$file_size" ]] || return 1
+    [[ -f "${dir}/${piece_cid}.car" ]] || return 1
+    matched=$((matched + 1))
+  done < <(
+    cli_json_retry sp get-allocations "$deal_id" \
+      | jq -r 'to_entries[] | select(.value.Data["/"] != null) | "\(.key)\t\(.value.Data["/"])"' \
+      | grep -E '^[0-9]+[[:space:]]+baga' || true
+  )
+  [[ "$matched" -gt 0 ]]
 }
 
 # True when every still-unclaimed Lotus allocation already has a Curio DDO row.
@@ -997,7 +1036,11 @@ ensure_lotus_miner_paused
 
 if [[ -z "$DEAL_ID" ]]; then
   if DEAL_ID="$(find_resumable_deal_for_manifest "$MANIFEST_URL" || true)" && [[ -n "$DEAL_ID" ]]; then
-    log "resuming incomplete deal_id=${DEAL_ID} for ${MANIFEST_URL}"
+    if deal_is_fully_claimed "$DEAL_ID"; then
+      log "deal_id=${DEAL_ID} already exists for ${MANIFEST_URL} (fully claimed) — continuing pipeline (no re-propose)"
+    else
+      log "resuming incomplete deal_id=${DEAL_ID} for ${MANIFEST_URL}"
+    fi
   else
     DEAL_ID=""
   fi
@@ -1055,7 +1098,12 @@ if [[ -z "$DEAL_ID" ]]; then
   rm -f "$propose_log"
 
   if [[ $propose_rc -ne 0 && -z "$propose_tx" ]]; then
-    die "propose-deal-from-manifest failed (rc=${propose_rc}). Stale CLIENT_ADDRESS (needs FIL)? Missing payment token/offer? Re-run: just porep-market up --from-env"
+    # Manifest already assigned (re-run / fully-claimed skip) → resume that deal instead of dying.
+    if DEAL_ID="$(latest_deal_id_for_manifest "$MANIFEST_URL" 2>/dev/null || true)" && [[ -n "$DEAL_ID" ]]; then
+      log "propose failed (NoOfferMatched/duplicate?); resuming existing deal_id=${DEAL_ID} for ${MANIFEST_URL}"
+    else
+      die "propose-deal-from-manifest failed (rc=${propose_rc}). Often NoOfferMatched = manifest already assigned to SP org, or no matching offer/capacity. Re-run with the same --manifest-url to resume, or: just porep-market up --from-env"
+    fi
   fi
 
   if [[ -n "$propose_tx" ]]; then
@@ -1143,11 +1191,16 @@ mkdir -p "$ONBOARD_DIR"
 
 # --- SP onboard-data: download piece CARs (aria2c) ---
 ensure_aria2c
+# shellcheck disable=SC2207
+ONBOARD_DL_ARGS=($(onboard_download_args_from_piece_base "$PIECE_BASE_URL"))
 if onboard_cars_present "$DEAL_ID" "$ONBOARD_DIR"; then
   log "piece CARs already present in ${ONBOARD_DIR} — skipping onboard-data"
 else
-  log "sp onboard-data ${DEAL_ID} --output-dir ${ONBOARD_DIR}"
-  run_cli_retry sp onboard-data "$DEAL_ID" --output-dir "$ONBOARD_DIR"
+  if [[ -f "${ONBOARD_DIR}/manifest_${DEAL_ID}.json" ]]; then
+    log "onboard dir ${ONBOARD_DIR} is stale (manifest piece CIDs ≠ deal allocations) — re-running onboard-data"
+  fi
+  log "sp onboard-data ${DEAL_ID} --output-dir ${ONBOARD_DIR} ${ONBOARD_DL_ARGS[*]} (from PIECE_BASE_URL=${PIECE_BASE_URL})"
+  run_cli_retry sp onboard-data "$DEAL_ID" --output-dir "$ONBOARD_DIR" "${ONBOARD_DL_ARGS[@]}"
 fi
 
 if [[ "$SKIP_CLAIM" == true ]]; then

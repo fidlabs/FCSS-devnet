@@ -33,7 +33,7 @@ source "${SCRIPT_DIR}/../lib/envfile.sh"
 # shellcheck source=../lib/lotus.sh
 source "${SCRIPT_DIR}/../lib/lotus.sh"
 
-ORG_FUND_AMOUNT="${ORG_FUND_AMOUNT:-100}"
+ORG_FUND_AMOUNT="${ORG_FUND_AMOUNT:-1000}"
 AVAILABLE_BYTES="${AVAILABLE_BYTES:-10995116277760}" # 10 TiB
 DATACAP_GRANT_BYTES="${DATACAP_GRANT_BYTES:-1000000000}" # 1 GiB, same as Curio mk12 bootstrap
 # V2 offer: 6–60 months (EPOCHS_IN_DAY=2880); price must be >= token min (contract enforces >= 1).
@@ -68,7 +68,7 @@ Environment:
   LOTUS_CONTAINER        Docker container name (default: lotus)
   LOTUS_MINER_CONTAINER  Docker container name (default: lotus-miner)
   CURIO_CONTAINER        Docker container name (default: curio)
-  ORG_FUND_AMOUNT        FIL to send new org wallet (default: 100)
+  ORG_FUND_AMOUNT        FIL to send new org/client wallets (default: 1000)
   AVAILABLE_BYTES        Capacity to register (default: 10995116277760)
   DATACAP_GRANT_BYTES    DataCap to grant DataCapEvidenceAdapter (default: 1000000000)
   REGISTER_LOTUS_MINER   Register lotus-miner in SPRegistry (default: false)

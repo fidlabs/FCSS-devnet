@@ -33,6 +33,10 @@
 : "${FCSS_CDP_DMOB_PG_HOST_PORT:=28039}"
 : "${FCSS_CDP_APP_HOST_PORT:=23300}"
 
+# Seed-deals fixture (unique manifests + CARs; avoids colliding with ad-hoc :8080/:7777)
+: "${FCSS_SEED_MANIFEST_HOST_PORT:=18080}"
+: "${FCSS_SEED_PIECE_HOST_PORT:=17777}"
+
 : "${FCSS_HOST:=127.0.0.1}"
 
 : "${RPC_URL:=http://${FCSS_HOST}:${FCSS_LOTUS_RPC_HOST_PORT}/rpc/v1}"
@@ -45,4 +49,6 @@
 : "${CDP_DMOB_DATABASE_URL:=postgresql://postgres:postgres@${FCSS_HOST}:${FCSS_CDP_DMOB_PG_HOST_PORT}/postgres?schema=public&connection_limit=50}"
 : "${CDP_APP_URL:=http://${FCSS_HOST}:${FCSS_CDP_APP_HOST_PORT}}"
 : "${CDP_SERVICE_URL:=${CDP_APP_URL}}"
+: "${SEED_MANIFEST_BASE_URL:=http://${FCSS_HOST}:${FCSS_SEED_MANIFEST_HOST_PORT}}"
+: "${SEED_PIECE_BASE_URL:=http://host.docker.internal:${FCSS_SEED_PIECE_HOST_PORT}/piece}"
 : "${DEV_CURIO_EXTERNAL_URL:=http://host.docker.internal:${FCSS_CURIO_MARKET_HOST_PORT}}"

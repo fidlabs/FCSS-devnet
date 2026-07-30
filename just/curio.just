@@ -18,6 +18,7 @@ logs:
     docker compose -f extern/curio/docker/docker-compose.yaml logs -f
 
 down:
+    # Upstream Curio target: compose down --rmi=local AND rm -rf ./docker/data (wipes chain).
     make -C extern/curio devnet/down
 
 cli *args:

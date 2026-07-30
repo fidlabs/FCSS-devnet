@@ -14,6 +14,7 @@ Stock CDP targets **mainnet (314)** and **calibnet (314159)**, indexes from a ca
 | `0006-index-on-startup-every-5-minutes.patch` | Run PoRep/Pay indexers on boot and every 5 minutes (stock is hourly only) |
 | `0007-expose-deal-type-on-po-rep-deals.patch` | Persist on-chain `dealType` (`getDeal`) and return it on `GET /po-rep/deals` (`PUBLIC`/`PRIVATE`) |
 | `0008-filter-deals-by-piece-cid.patch` | Index manifest `pieceCid`s into `po_rep_deal_piece`; `GET /po-rep/deals?pieceCID=` returns matching deals |
+| `0009-tolerate-missing-erc20-token-metadata.patch` | `symbol()` / `decimals()` failures return `UNKNOWN` / `18` instead of 500ing `/po-rep/deals` |
 
 ## Justifications
 
@@ -51,4 +52,12 @@ V2 stores `dealType` on-chain (`PUBLIC=10`, `PRIVATE=20`) but `DealCreated` does
 
 Contracts never store piece CIDs — they live in the off-chain manifest at `manifestLocation`. Stock CDP only keeps that URL, so it cannot answer “which deals contain this piece?”. On `DealCreated` (and `ManifestLocationUpdated`), the indexer HTTP-fetches the manifest, writes `po_rep_deal_piece(dealId, pieceCid)`, and `GET /po-rep/deals?pieceCID=<commP>` returns the usual deals list filtered to deals that contain that piece. Failures to fetch a manifest log a warning and leave the deal without pieces (deal row still indexes).
 
-**TODO (push upstream):** local chain support, configurable origin, `PORT`, optional non-TLS DB, V2 events/`dealType`, piece indexing + `pieceCID` filter, and a configurable indexer cadence — then drop the matching patches here.
+### `0009` — Tolerate missing ERC-20 token metadata
+
+`GET /po-rep/deals` (and Filecoin Pay endpoints) enrich each deal’s payment token via `ERC20TokenInfoService.symbol()` / `decimals()`. Stock CDP lets `readContract` throw when the address has **no code** or is not ERC-20, which turns the whole list into HTTP 500.
+
+That shows up on FCSS after a **chain reset** (or redeploy) while CDP Postgres still has deal rows whose `paymentToken` points at an old USDFC/deploy address that no longer exists on the live FEVM. Example: `ContractFunctionExecutionError: symbol() returned no data ("0x")` for a zero-codesize address while current USDFC (`cast call … symbol()`) works.
+
+This patch catches those RPC failures, logs a warning, and returns fallbacks (`symbol=UNKNOWN`, `decimals=18`) so deals remain listable. Prefer wiping CDP DB after `just reset` when you want clean token metadata; this patch keeps the API usable in the meantime.
+
+**TODO (push upstream):** local chain support, configurable origin, `PORT`, optional non-TLS DB, V2 events/`dealType`, piece indexing + `pieceCID` filter, configurable indexer cadence, and resilient ERC-20 metadata reads — then drop the matching patches here.

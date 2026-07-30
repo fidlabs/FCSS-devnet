@@ -27,6 +27,7 @@ just status   # Lotus / Curio / CDP / oracle / ACTIVE / pins
 
 # prepare + serve a deal manifest/pieces (see Singularity below), then:
 just make-deal
+# or: just seed-deals   # 3 clients × private/public via Docker Singularity
 ```
 
 Skip steps when iterating: `SKIP_DOCKER=1`, `SKIP_VENV=1`, or `SKIP_PATCH=1` on init helpers.
@@ -38,30 +39,29 @@ Skip steps when iterating: `SKIP_DOCKER=1`, `SKIP_VENV=1`, or `SKIP_PATCH=1` on 
 | `just init` | Yes | Submodules → Curio/tooling/oracle/cdp patches → `pin-verify` |
 | `just up` | Yes* | Bring stack up, deploy, wire SP, start CDP (background) + oracle |
 | `just status` | Yes | Probe RPC, Curio, CDP, oracle, `ACTIVE`, pins |
-| `just down` | Yes | Stop oracle + CDP + Curio compose (data kept) |
-| `just reset` | **Destructive** | Wipe chain/DB/envs → then `just up` |
+| `just down` | **Destructive (Curio)** | Stop oracle + CDP; Curio `devnet/down` also `rm -rf extern/curio/docker/data` |
+| `just reset` | **Destructive** | Full wipe (Curio data + oracle/CDP DBs + envs) → then `just up` |
 | `just make-deal …` | Yes | V2 deal pipeline (flags passed through) |
+| `just seed-deals …` | Yes | 3 clients × private/public, unique piece CIDs (Singularity) |
 
 \* `just up` starts CDP in the **background**, then ends in `just oracle up` (**foreground**).
 
-### `just reset` — wipe vs preserve
+### `just down` vs `just reset`
 
-**Wipes**
+**`just down`** (`oracle down` → `cdp down` → `curio down`):
 
-- Curio `extern/curio/docker/data` (via `devnet/down`)
-- Oracle Postgres compose state
-- CDP Postgres + DMOB mock compose + Nest pid
-- `extern/porep-market/.deployment/`
-- Generated `.env` files (moved aside to `.env.bak.<UTC>`)
-- Old `.runtime/failures/` (keeps the newest 10)
+- Stops oracle + CDP Nest/compose (CDP/oracle Postgres volumes are **not** removed by down alone).
+- Curio uses upstream `make devnet/down`, which runs `docker compose down --rmi=local` **and** `rm -rf ./docker/data`. That deletes the local chain, Yugabyte, contracts bootstrap, and related Curio docker state under `extern/curio/docker/data`.
 
-**Preserves**
+**`just reset`** additionally wipes oracle/CDP DB state, moves generated `.env` aside, clears `extern/porep-market/.deployment/`, prunes old `.runtime/failures/`, then runs `just up`. Use reset when you want a full clean stack, not only a stopped Curio.
+
+**Preserves** (neither down nor reset removes these by design)
 
 - Submodule checkouts, local patches, `versions.lock.yaml`
 - Docker images / proof params
 - Immutable deploy records under `extern/porep-market/deployments/devnet/records/`
 
-`down` alone does **not** wipe records or chain data. Prefer `reset` when you need a clean chain and a fresh deploy.
+After `just down` / `just reset`, bring the chain back with `just up` (or `just curio up` + `just porep-market deploy` + …). Stale CDP rows pointing at old token addresses can 500 `/po-rep/deals` until CDP DB is wiped/reindexed (`just reset` or recreate CDP volumes) — patch `0009` makes that a soft `UNKNOWN` token instead of hard fail.
 
 ## Host endpoints
 
@@ -189,15 +189,16 @@ Root recipes ([`justfile`](justfile)) compose modules in [`just/`](just/):
 | `just pin-verify` | lockfile vs HEADs/gitlinks + patch `--check` |
 | `just up` | curio up → deploy → SP up → CDP (bg) → oracle (foreground) |
 | `just status` | health probes + ACTIVE + pin-verify (warn) |
-| `just down` | oracle + CDP + curio down |
-| `just reset` | wipe (see above) then `just up` |
+| `just down` | oracle + CDP stop; Curio `devnet/down` **wipes** `extern/curio/docker/data` |
+| `just reset` | full wipe (see above) then `just up` |
 | `just make-deal …` | tooling venv + deal pipeline |
+| `just seed-deals …` | 3×2 unique-piece deals fixture |
 
 Namespaced:
 
 - `just curio init\|up\|cli\|logs\|down`
 - `just porep-market gen-env\|deploy\|up\|tooling-env\|use-deployment`
-- `just tooling patch\|init\|make-deal`
+- `just tooling patch\|init\|make-deal\|seed-deals`
 - `just oracle patch\|up\|get-deals\|logs\|down`
 - `just cdp patch\|up\|logs\|down`
 
@@ -441,6 +442,30 @@ just make-deal
 # just make-deal --deal-id 1
 # just make-deal --deal-id 1 --no-wait-claims
 ```
+
+### Seed many deals (3 clients × private/public)
+
+For CDP/oracle fixtures with **distinct owners**, **both deal types**, and **unique `pieceCid`s** per deal:
+
+```bash
+just seed-deals
+# just seed-deals --prep-only    # only Singularity (Docker) + HTTP servers
+# just seed-deals --deals-only   # reuse .runtime/seed-deals manifests
+```
+
+[`scripts/tooling/seed-deals.sh`](scripts/tooling/seed-deals.sh) will:
+
+1. Reuse tooling `CLIENT_*` as **C1**, create **C2/C3** via `cast wallet new` (cached in `.runtime/seed-deals/clients.json`)
+2. Fund FIL + USDFC for each client
+3. Prep six tiny datasets with **Singularity in Docker** (`ghcr.io/data-preservation-programs/singularity:main`) → manifests under `.runtime/seed-deals/http/seed/<slot>/manifest.json`
+4. Serve manifests on **:18080** (python) and CARs on **:17777** (Singularity content-provider container `fcss-seed-singularity-cp`)
+5. Run the full `make-deal` pipeline six times, then restore `CLIENT_*` to USER_1
+
+No host `singularity` binary is required — only Docker. Override image with `SINGULARITY_IMAGE=…`.
+
+This is **slow** (six sealing/evidence waits). Escape hatch: `--manifests-file` with six `{client,dealType,manifestUrl}` objects if you already have unique manifests.
+
+Afterward, CDP `GET /po-rep/deals?pieceCID=<cid>` should return a single deal.
 
 **Claims vs allocations:** Curio sealing creates VerifReg claims (same numeric IDs as allocations). `sp get-claims` only shows IDs already on the `DataCapEvidenceAdapter`. `make-deal` waits for Lotus allocations to clear, runs `admin submit-evidence`, then confirms via `sp get-claims`.
 
