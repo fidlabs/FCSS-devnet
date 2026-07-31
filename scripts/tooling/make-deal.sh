@@ -43,6 +43,9 @@ ENV_FILE="${ENV_FILE:-${TOOLING_DIR}/.env}"
 # SSRF-guards those unless ALLOW_PRIVATE_MANIFEST_URLS is set.
 export ALLOW_PRIVATE_MANIFEST_URLS="${ALLOW_PRIVATE_MANIFEST_URLS:-true}"
 
+# Keep CLI tx logs and onboard CARs under .runtime/tooling/ (not repo root).
+runtime_export_tooling_logs
+
 if [[ -x "${TOOLING_DIR}/.venv/bin/python" ]]; then
   PYTHON="${TOOLING_DIR}/.venv/bin/python"
 else
@@ -83,7 +86,7 @@ Options:
   --duration-months N             Deal duration in months, min 6 (default: ${DURATION_MONTHS})
   --deal-type TYPE                private|public (default: ${DEAL_TYPE})
   --deal-id N                     Skip propose; resume from this deal id
-  --onboard-dir DIR               Directory for sp onboard-data (default: ./deal-<id>)
+  --onboard-dir DIR               Directory for sp onboard-data (default: .runtime/tooling/deal-<id>)
   --piece-base-url URL            Piece CAR base for Curio add-url and host onboard-data (default: ${PIECE_BASE_URL})
   --skip-onboard                  Stop after make-allocations
   --skip-claim                    Skip claim-allocations / add-url (still onboard unless --skip-onboard)
@@ -1185,7 +1188,7 @@ if [[ "$SKIP_ONBOARD" == true ]]; then
 fi
 
 if [[ -z "$ONBOARD_DIR" ]]; then
-  ONBOARD_DIR="${REPO_ROOT}/deal-${DEAL_ID}"
+  ONBOARD_DIR="${RUNTIME_TOOLING}/deal-${DEAL_ID}"
 fi
 mkdir -p "$ONBOARD_DIR"
 

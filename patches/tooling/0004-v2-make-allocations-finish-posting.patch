@@ -1,0 +1,33 @@
+diff --git a/cli/commands/client/make_allocations.py b/cli/commands/client/make_allocations.py
+index d97e30f..b9216b1 100644
+--- a/cli/commands/client/make_allocations.py
++++ b/cli/commands/client/make_allocations.py
+@@ -59,8 +59,8 @@ def make_allocations(deal_id: int, print_only: bool = False, exclude_dag: bool =
+ 
+     click.echo(f"Found {len(deal_allocations)} allocations already made and {len(deal_claims)} claims for deal ID {deal_id}")
+ 
+-    if deal_claims:
+-        raise RuntimeError("Some allocations claimed but deal still in ACCEPTED state")
++    # V2: deal stays ACCEPTED after DataCap posting (and while claims appear). Claims are
++    # not a make-allocations failure mode — only unfinished piece posting matters here.
+ 
+     if local_manifest:
+         manifest = commands_utils.fetch_local_manifest(Path(local_manifest).resolve())
+@@ -77,7 +77,16 @@ def make_allocations(deal_id: int, print_only: bool = False, exclude_dag: bool =
+     batches = _batch_pieces(pieces_not_allocated)
+ 
+     if not pieces_not_allocated:
+-        raise RuntimeError("All pieces allocated but deal still in ACCEPTED state")
++        # Allocations may already be on-chain while finishDataCapPosting is still pending
++        # (e.g. tipset fork after submitDataCapBatch succeeded). Finish posting and exit.
++        if print_only:
++            raise click.ClickException(
++                f"All pieces allocated for deal ID {deal_id} but DataCap posting is not finished"
++            )
++        click.echo("All pieces already allocated; finishing DataCap posting...")
++        client_utils.finish_data_cap_posting(deal.deal)
++        click.echo("\nAll done!")
++        return
+ 
+     utils.confirm(f"Continue with allocation of remaining {len(pieces_not_allocated)} pieces in {len(batches)} batches?", default=True, abort=True)
+ 

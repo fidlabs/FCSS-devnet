@@ -7,6 +7,7 @@ Unified diffs applied by [`scripts/tooling/patch.sh`](../../scripts/tooling/patc
 | `0001-v2-deal-view-compose-from-getters.patch` | Compose `get_deal_view` from market getters + ABI without on-market `getDealView` (ViewHelper-only on this stack); V2 deal/`payee`/`proposedAtEpoch` shape |
 | `0002-admin-submit-evidence.patch` | `admin submit-evidence` CLI for `PoRepMarket.submitEvidenceBatch` (`abi.encode(uint256 batchSize)`, optional `--wait`) |
 | `0003-propose-deal-type.patch` | PoRepMarket `#120` `dealType`: ABI (`getDeal` / `getDeals` / `getDealsForOrganizationByState` / `proposeDeal`) + request/deal models, encoding, CLI `--deal-type private\|public` (default **private**=20) |
+| `0004-v2-make-allocations-finish-posting.patch` | V2: when all pieces are already allocated but `finishDataCapPosting` pending (e.g. tipset fork after batch tx), finish posting instead of raising; claims while ACCEPTED are OK |
 
 **Dropped:** EthAddress zero-address handling — landed upstream as `aa26374`.
 

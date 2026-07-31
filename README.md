@@ -39,8 +39,8 @@ Skip steps when iterating: `SKIP_DOCKER=1`, `SKIP_VENV=1`, or `SKIP_PATCH=1` on 
 | `just init` | Yes | Submodules → Curio/tooling/oracle/cdp patches → `pin-verify` |
 | `just up` | Yes* | Bring stack up, deploy, wire SP, start CDP (background) + oracle |
 | `just status` | Yes | Probe RPC, Curio, CDP, oracle, `ACTIVE`, pins |
-| `just down` | **Destructive (Curio)** | Stop oracle + CDP; Curio `devnet/down` also `rm -rf extern/curio/docker/data` |
-| `just reset` | **Destructive** | Full wipe (Curio data + oracle/CDP DBs + envs) → then `just up` |
+| `just down` | **Destructive** | Stop stack; wipe Curio data, oracle/CDP volumes, `.runtime/`, `.deployment/` |
+| `just reset` | **Destructive** | `just down` + backup generated `.env` files → then `just up` |
 | `just make-deal …` | Yes | V2 deal pipeline (flags passed through) |
 | `just seed-deals …` | Yes | 3 clients × private/public, unique piece CIDs (Singularity) |
 
@@ -48,20 +48,23 @@ Skip steps when iterating: `SKIP_DOCKER=1`, `SKIP_VENV=1`, or `SKIP_PATCH=1` on 
 
 ### `just down` vs `just reset`
 
-**`just down`** (`oracle down` → `cdp down` → `curio down`):
+**`just down`** ([`scripts/down.sh`](scripts/down.sh)):
 
-- Stops oracle + CDP Nest/compose (CDP/oracle Postgres volumes are **not** removed by down alone).
-- Curio uses upstream `make devnet/down`, which runs `docker compose down --rmi=local` **and** `rm -rf ./docker/data`. That deletes the local chain, Yugabyte, contracts bootstrap, and related Curio docker state under `extern/curio/docker/data`.
+- Stops seed-deals HTTP + Singularity content-provider container
+- Oracle + CDP: `docker compose down -v` (Postgres/DMOB volumes removed) and CDP Nest pid
+- Curio: upstream `make devnet/down` → `docker compose down --rmi=local` **and** `rm -rf ./docker/data`
+- Deletes `.runtime/` (seed-deals, tooling onboard/logs, …) and `extern/porep-market/.deployment/`
 
-**`just reset`** additionally wipes oracle/CDP DB state, moves generated `.env` aside, clears `extern/porep-market/.deployment/`, prunes old `.runtime/failures/`, then runs `just up`. Use reset when you want a full clean stack, not only a stopped Curio.
+**`just reset`** runs `just down`, moves generated `.env` aside (`.env.bak.<ts>`), then `just up`.
 
 **Preserves** (neither down nor reset removes these by design)
 
+- Generated `.env` files on `just down` only (reset backs them up)
 - Submodule checkouts, local patches, `versions.lock.yaml`
 - Docker images / proof params
 - Immutable deploy records under `extern/porep-market/deployments/devnet/records/`
 
-After `just down` / `just reset`, bring the chain back with `just up` (or `just curio up` + `just porep-market deploy` + …). Stale CDP rows pointing at old token addresses can 500 `/po-rep/deals` until CDP DB is wiped/reindexed (`just reset` or recreate CDP volumes) — patch `0009` makes that a soft `UNKNOWN` token instead of hard fail.
+After `just down`, bring the chain back with `just up` (or `just curio up` + `just porep-market deploy` + …).
 
 ## Host endpoints
 
@@ -189,8 +192,8 @@ Root recipes ([`justfile`](justfile)) compose modules in [`just/`](just/):
 | `just pin-verify` | lockfile vs HEADs/gitlinks + patch `--check` |
 | `just up` | curio up → deploy → SP up → CDP (bg) → oracle (foreground) |
 | `just status` | health probes + ACTIVE + pin-verify (warn) |
-| `just down` | oracle + CDP stop; Curio `devnet/down` **wipes** `extern/curio/docker/data` |
-| `just reset` | full wipe (see above) then `just up` |
+| `just down` | stop stack; wipe Curio data, DB volumes, `.runtime/`, `.deployment/` |
+| `just reset` | `just down` + backup `.env` → `just up` |
 | `just make-deal …` | tooling venv + deal pipeline |
 | `just seed-deals …` | 3×2 unique-piece deals fixture |
 
@@ -442,6 +445,8 @@ just make-deal
 # just make-deal --deal-id 1
 # just make-deal --deal-id 1 --no-wait-claims
 ```
+
+Onboard CARs/manifests land in `.runtime/tooling/deal-<id>/`; CLI tx logs in `.runtime/tooling/logs/` (wiped by `just down`).
 
 ### Seed many deals (3 clients × private/public)
 

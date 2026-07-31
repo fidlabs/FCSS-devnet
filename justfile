@@ -32,16 +32,15 @@ up:
     just cdp up
     just oracle up
 
+# Stop stack + wipe runtime (volumes, .runtime/, Curio docker/data, .deployment/)
 down:
-    just oracle down
-    just cdp down
-    just curio down
+    ./scripts/down.sh
 
 # Probe RPC / Curio / CDP / oracle / ACTIVE / pins (non-fatal pin warn)
 status:
     ./scripts/status.sh
 
-# Wipe chain/DB/envs (preserve records/images/patches), then just up
+# just down + backup .env files, then just up
 reset:
     ./scripts/reset.sh
 

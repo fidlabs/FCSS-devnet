@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Stop background CDP Nest process and tear down CDP compose (Postgres + DMOB).
+# Stop background CDP Nest process and tear down CDP compose (Postgres + DMOB),
+# including named volumes.
 #
 # Usage:
 #   ./scripts/cdp/down.sh
@@ -30,13 +31,13 @@ else
 fi
 
 if [[ -f "$COMPOSE_FILE" ]]; then
-  log "docker compose down (${COMPOSE_FILE#"$REPO_ROOT"/})"
+  log "docker compose down -v (${COMPOSE_FILE#"$REPO_ROOT"/})"
   FCSS_CDP_PG_HOST_PORT="${FCSS_CDP_PG_HOST_PORT}" \
   FCSS_CDP_DMOB_PG_HOST_PORT="${FCSS_CDP_DMOB_PG_HOST_PORT}" \
-    docker compose -f "$COMPOSE_FILE" down || true
+    docker compose -f "$COMPOSE_FILE" down -v || true
 fi
 
-# Allow re-seed after volume wipe on next up.
+# Allow re-seed after volume wipe on next up (also cleared by scripts/down.sh).
 rm -f "${RUNTIME_ROOT}/cdp-dmob-seeded"
 
 log "cdp down complete"

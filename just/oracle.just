@@ -22,4 +22,4 @@ logs:
     docker compose -f extern/filecoin-oracle-service/docker-compose.yml -f docker/oracle-compose.ports.yaml logs -f
 
 down:
-    docker compose -f extern/filecoin-oracle-service/docker-compose.yml -f docker/oracle-compose.ports.yaml down
+    ./scripts/oracle/down.sh

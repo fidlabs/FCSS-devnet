@@ -544,19 +544,23 @@ run_deals() {
   done
 }
 
-# Resolve deal id whose onboarded manifest contains this piece CID (deal-N/manifest_N.json).
+# Resolve deal id whose onboarded manifest contains this piece CID
+# (.runtime/tooling/deal-N/manifest_N.json).
 deal_id_for_piece_cid() {
   local cid="$1"
   local f base
-  for f in "${REPO_ROOT}"/deal-*/manifest_*.json; do
+  shopt -s nullglob 2>/dev/null || true
+  for f in "${RUNTIME_TOOLING}"/deal-*/manifest_*.json; do
     [[ -f "$f" ]] || continue
     if jq -e --arg cid "$cid" '[.[].pieces[]? | select(.pieceCid == $cid)] | length > 0' "$f" >/dev/null 2>&1; then
       base="$(basename "$f")"
       # manifest_12.json → 12
       printf '%s\n' "${base#manifest_}" | sed 's/\.json$//'
+      shopt -u nullglob 2>/dev/null || true
       return 0
     fi
   done
+  shopt -u nullglob 2>/dev/null || true
   return 1
 }
 

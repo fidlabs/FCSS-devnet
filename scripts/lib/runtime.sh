@@ -3,9 +3,18 @@
 
 : "${RUNTIME_ROOT:=${REPO_ROOT}/.runtime}"
 : "${RUNTIME_FAILURES:=${RUNTIME_ROOT}/failures}"
+: "${RUNTIME_TOOLING:=${RUNTIME_ROOT}/tooling}"
+: "${RUNTIME_TOOLING_LOGS:=${RUNTIME_TOOLING}/logs}"
 
 runtime_ensure_dirs() {
-  mkdir -p "$RUNTIME_FAILURES"
+  mkdir -p "$RUNTIME_FAILURES" "$RUNTIME_TOOLING_LOGS"
+}
+
+# Point tooling CLI file logs under .runtime/tooling/logs (porep_tooling_cli.py).
+runtime_export_tooling_logs() {
+  runtime_ensure_dirs
+  export _LOG_FILE="${RUNTIME_TOOLING_LOGS}/logs.log"
+  export _ERROR_LOG_FILE="${RUNTIME_TOOLING_LOGS}/error.logs"
 }
 
 # Create .runtime/failures/<UTC>-<label>/ and print its path.
