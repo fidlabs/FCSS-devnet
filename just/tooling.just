@@ -25,7 +25,7 @@ make-deal *args:
     source "${venv}/bin/activate"
     ./scripts/tooling/make-deal.sh {{args}}
 
-# 3 clients × private/public with unique piece CIDs (Singularity via Docker)
+# 3 clients × (2 private + 1 public), unique piece CIDs (Singularity via Docker)
 seed-deals *args:
     #!/usr/bin/env bash
     set -euo pipefail

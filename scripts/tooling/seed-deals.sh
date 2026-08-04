@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Seed 3 clients × private/public (6 deals), each with unique Singularity piece CIDs.
+# Seed 3 clients × (2 private + 1 public) = 9 deals, each with unique Singularity
+# piece CIDs.
 #
 # Default path:
 #   1. Ensure C1=USER_1 + C2/C3 cast wallets; fund FIL + USDFC
-#   2. Prep 6 unique tiny datasets via Singularity → manifests under .runtime/seed-deals/
+#   2. Prep 9 unique tiny datasets via Singularity → manifests under .runtime/seed-deals/
 #   3. Serve manifests (:18080) + CARs (:17777)
-#   4. Full make-deal pipeline per (client, dealType) with unique --manifest-url
+#   4. Full make-deal pipeline per slot with unique --manifest-url
 #   5. Restore tooling .env CLIENT_* to USER_1
 #
 # Prerequisites: just porep-market up, docker, cast, jq, lotus (docker), tooling venv.
@@ -47,18 +48,22 @@ PREP_ONLY=false
 DEALS_ONLY=false
 SKIP_FUND=false
 ORG_FUND_AMOUNT="${ORG_FUND_AMOUNT:-1000}"
-# 1000 USDFC (18 decimals) — enough for two small deals per client.
+# 1000 USDFC (18 decimals) — enough for three small deals per client at default price.
 USDFC_FUND_WEI="${USDFC_FUND_WEI:-1000000000000000000000}"
 DEPLOYER_KEY_FILE="${CONTRACTS_DIR}/deployer.private-key"
 CONTRACT_ADDRESSES_JSON="${CONTRACTS_DIR}/contract_addresses.json"
 MAKE_DEAL_EXTRA=()
 
+# client:dealType[:suffix] — suffix disambiguates a second private deal per client.
 SLOTS=(
   "c1:private"
+  "c1:private:2"
   "c1:public"
   "c2:private"
+  "c2:private:2"
   "c2:public"
   "c3:private"
+  "c3:private:2"
   "c3:public"
 )
 
@@ -66,7 +71,7 @@ usage() {
   cat <<EOF
 Usage: $(basename "$0") [options] [-- make-deal flags…]
 
-Seed 3 clients × private/public with unique piece CIDs (full make-deal pipeline).
+Seed 3 clients × (2 private + 1 public) with unique piece CIDs (full make-deal pipeline).
 
 Options:
   --prep-only           Only prepare Singularity manifests/CARs + start HTTP servers
@@ -291,7 +296,7 @@ fund_clients() {
 }
 
 slot_id() {
-  # c1:private → c1-private
+  # c1:private → c1-private; c1:private:2 → c1-private-2
   printf '%s\n' "$1" | tr ':' '-'
 }
 
@@ -300,7 +305,9 @@ slot_client() {
 }
 
 slot_type() {
-  printf '%s\n' "${1#*:}"
+  # c1:private → private; c1:private:2 → private; c1:public → public
+  local rest="${1#*:}"
+  printf '%s\n' "${rest%%:*}"
 }
 
 export_manifest_for_prep() {
@@ -424,6 +431,36 @@ prepare_all_slots() {
   done
 }
 
+stop_piece_server() {
+  if docker inspect "$SINGULARITY_CP_NAME" >/dev/null 2>&1; then
+    log "stopping ${SINGULARITY_CP_NAME} (avoid concurrent writes to singularity.db)"
+    docker rm -f "$SINGULARITY_CP_NAME" >/dev/null 2>&1 || true
+  fi
+}
+
+# Host-side integrity check; dump/restore if SQLite reports corruption.
+ensure_singularity_db_ok() {
+  local db="${SING_ROOT}/singularity.db"
+  local dump tmp
+  [[ -f "$db" ]] || return 0
+  require_cmd sqlite3
+  if sqlite3 "$db" 'PRAGMA integrity_check;' 2>/dev/null | grep -qx ok; then
+    return 0
+  fi
+  log "singularity.db integrity failed — attempting dump/restore"
+  dump="$(mktemp "${TMPDIR:-/tmp}/singularity-dump.XXXXXX.sql")"
+  tmp="${db}.rebuilt.$$"
+  sqlite3 "$db" ".dump" >"$dump" 2>/dev/null \
+    || die "singularity.db is corrupt and .dump failed — remove ${SING_ROOT} and re-run without --deals-only"
+  rm -f "$tmp"
+  sqlite3 "$tmp" <"$dump" || die "failed to rebuild singularity.db from dump"
+  rm -f "$dump" "${db}-wal" "${db}-shm"
+  mv "$tmp" "$db"
+  sqlite3 "$db" 'PRAGMA integrity_check;' 2>/dev/null | grep -qx ok \
+    || die "rebuilt singularity.db still fails integrity_check"
+  log "singularity.db rebuilt"
+}
+
 start_http_servers() {
   local manifest_pid_file
   manifest_pid_file="${SEED_ROOT}/manifest-http.pid"
@@ -442,26 +479,25 @@ start_http_servers() {
     log "manifest port ${FCSS_SEED_MANIFEST_HOST_PORT} already listening"
   fi
 
-  if ! port_listening "$FCSS_SEED_PIECE_HOST_PORT"; then
-    require_singularity
-    log "serving CARs on :${FCSS_SEED_PIECE_HOST_PORT} (docker ${SINGULARITY_CP_NAME})"
-    docker rm -f "$SINGULARITY_CP_NAME" >/dev/null 2>&1 || true
-    docker run -d --name "$SINGULARITY_CP_NAME" \
-      -v "${SEED_ROOT}:/work" \
-      -w /work/singularity \
-      -p "${FCSS_SEED_PIECE_HOST_PORT}:7777" \
-      "$SINGULARITY_IMAGE" \
-      run content-provider --http-bind 0.0.0.0:7777 \
-      >"${SEED_ROOT}/logs/piece-http.log" 2>&1 \
-      || die "failed to start ${SINGULARITY_CP_NAME} — see ${SEED_ROOT}/logs/piece-http.log"
-    sleep 2
-    port_listening "$FCSS_SEED_PIECE_HOST_PORT" || {
-      docker logs "$SINGULARITY_CP_NAME" >>"${SEED_ROOT}/logs/piece-http.log" 2>&1 || true
-      die "content-provider failed — see ${SEED_ROOT}/logs/piece-http.log"
-    }
-  else
-    log "piece port ${FCSS_SEED_PIECE_HOST_PORT} already listening"
-  fi
+  # Always recreate the content-provider so it opens a fresh DB connection after
+  # prep (concurrent docker --rm workers + a long-lived CP corrupt SQLite).
+  require_singularity
+  ensure_singularity_db_ok
+  stop_piece_server
+  log "serving CARs on :${FCSS_SEED_PIECE_HOST_PORT} (docker ${SINGULARITY_CP_NAME})"
+  docker run -d --name "$SINGULARITY_CP_NAME" \
+    -v "${SEED_ROOT}:/work" \
+    -w /work/singularity \
+    -p "${FCSS_SEED_PIECE_HOST_PORT}:7777" \
+    "$SINGULARITY_IMAGE" \
+    run content-provider --http-bind 0.0.0.0:7777 \
+    >"${SEED_ROOT}/logs/piece-http.log" 2>&1 \
+    || die "failed to start ${SINGULARITY_CP_NAME} — see ${SEED_ROOT}/logs/piece-http.log"
+  sleep 2
+  port_listening "$FCSS_SEED_PIECE_HOST_PORT" || {
+    docker logs "$SINGULARITY_CP_NAME" >>"${SEED_ROOT}/logs/piece-http.log" 2>&1 || true
+    die "content-provider failed — see ${SEED_ROOT}/logs/piece-http.log"
+  }
 }
 
 manifest_url_for_slot() {
@@ -478,8 +514,8 @@ load_plan_from_manifests_file() {
   # Writes ${SEED_ROOT}/plan.json as [{client,dealType,manifestUrl,slot}]
   local f="$1"
   require_file "$f"
-  jq -e 'type=="array" and length==6' "$f" >/dev/null || \
-    die "--manifests-file must be a JSON array of 6 {client,dealType,manifestUrl} objects"
+  jq -e 'type=="array" and length>=1' "$f" >/dev/null || \
+    die "--manifests-file must be a JSON array of {client,dealType,manifestUrl} objects"
   cp "$f" "${SEED_ROOT}/plan.json"
 }
 
@@ -644,6 +680,7 @@ fi
 if [[ -n "$MANIFESTS_FILE" ]]; then
   load_plan_from_manifests_file "$MANIFESTS_FILE"
 elif [[ "$DEALS_ONLY" != true ]]; then
+  stop_piece_server
   prepare_all_slots
   start_http_servers
   build_default_plan
@@ -663,4 +700,4 @@ run_deals
 restore_client_env
 trap - EXIT
 print_summary
-log "done — 6 deals seeded (3 clients × private/public, unique piece CIDs)"
+log "done — 9 deals seeded (3 clients × 2 private + 1 public, unique piece CIDs)"

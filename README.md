@@ -27,7 +27,7 @@ just status   # Lotus / Curio / CDP / oracle / ACTIVE / pins
 
 # prepare + serve a deal manifest/pieces (see Singularity below), then:
 just make-deal
-# or: just seed-deals   # 3 clients × private/public via Docker Singularity
+# or: just seed-deals   # 3 clients × (2 private + 1 public) via Docker Singularity
 ```
 
 Skip steps when iterating: `SKIP_DOCKER=1`, `SKIP_VENV=1`, or `SKIP_PATCH=1` on init helpers.
@@ -42,7 +42,7 @@ Skip steps when iterating: `SKIP_DOCKER=1`, `SKIP_VENV=1`, or `SKIP_PATCH=1` on 
 | `just down` | **Destructive** | Stop stack; wipe Curio data, oracle/CDP volumes, `.runtime/`, `.deployment/` |
 | `just reset` | **Destructive** | `just down` + backup generated `.env` files → then `just up` |
 | `just make-deal …` | Yes | V2 deal pipeline (flags passed through) |
-| `just seed-deals …` | Yes | 3 clients × private/public, unique piece CIDs (Singularity) |
+| `just seed-deals …` | Yes | 3 clients × (2 private + 1 public), unique piece CIDs (Singularity) |
 
 \* `just up` starts CDP in the **background**, then ends in `just oracle up` (**foreground**).
 
@@ -195,7 +195,7 @@ Root recipes ([`justfile`](justfile)) compose modules in [`just/`](just/):
 | `just down` | stop stack; wipe Curio data, DB volumes, `.runtime/`, `.deployment/` |
 | `just reset` | `just down` + backup `.env` → `just up` |
 | `just make-deal …` | tooling venv + deal pipeline |
-| `just seed-deals …` | 3×2 unique-piece deals fixture |
+| `just seed-deals …` | 3×(2 private + 1 public) unique-piece deals fixture |
 
 Namespaced:
 
@@ -448,7 +448,7 @@ just make-deal
 
 Onboard CARs/manifests land in `.runtime/tooling/deal-<id>/`; CLI tx logs in `.runtime/tooling/logs/` (wiped by `just down`).
 
-### Seed many deals (3 clients × private/public)
+### Seed many deals (3 clients × 2 private + 1 public)
 
 For CDP/oracle fixtures with **distinct owners**, **both deal types**, and **unique `pieceCid`s** per deal:
 
@@ -462,13 +462,13 @@ just seed-deals
 
 1. Reuse tooling `CLIENT_*` as **C1**, create **C2/C3** via `cast wallet new` (cached in `.runtime/seed-deals/clients.json`)
 2. Fund FIL + USDFC for each client
-3. Prep six tiny datasets with **Singularity in Docker** (`ghcr.io/data-preservation-programs/singularity:main`) → manifests under `.runtime/seed-deals/http/seed/<slot>/manifest.json`
+3. Prep **nine** tiny datasets (per client: `private`, `private:2`, `public`) with **Singularity in Docker** → manifests under `.runtime/seed-deals/http/seed/<slot>/manifest.json`
 4. Serve manifests on **:18080** (python) and CARs on **:17777** (Singularity content-provider container `fcss-seed-singularity-cp`)
-5. Run the full `make-deal` pipeline six times, then restore `CLIENT_*` to USER_1
+5. Run the full `make-deal` pipeline nine times, then restore `CLIENT_*` to USER_1
 
 No host `singularity` binary is required — only Docker. Override image with `SINGULARITY_IMAGE=…`.
 
-This is **slow** (six sealing/evidence waits). Escape hatch: `--manifests-file` with six `{client,dealType,manifestUrl}` objects if you already have unique manifests.
+This is **slow** (nine sealing/evidence waits). Escape hatch: `--manifests-file` with `{client,dealType,manifestUrl}` objects if you already have unique manifests.
 
 Afterward, CDP `GET /po-rep/deals?pieceCID=<cid>` should return a single deal.
 
