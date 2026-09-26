@@ -457,7 +457,7 @@ No host `singularity` binary is required — only Docker. Override image with `S
 
 This is **slow** (nine sealing/evidence waits). Escape hatch: `--manifests-file` with `{client,dealType,manifestUrl}` objects if you already have unique manifests.
 
-Afterward, Hyperion `GET /po-rep/deals?pieceCID=<cid>` should return a single deal.
+Afterward, Hyperion `GET /po-rep/deals?pieceCid=<cid>` should return a single deal.
 
 **Claims vs allocations:** Curio sealing creates VerifReg claims (same numeric IDs as allocations). `sp get-claims` only shows IDs already on the `DataCapEvidenceAdapter`. `make-deal` waits for Lotus allocations to clear, runs `admin submit-evidence`, then confirms via `sp get-claims`.
 
