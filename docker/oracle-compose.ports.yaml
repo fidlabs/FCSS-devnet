@@ -1,6 +1,0 @@
-version: "3.9"
-# FCSS-devnet host port override for oracle Postgres (avoids 8038 collisions).
-services:
-  oracle-service-db:
-    ports:
-      - "28038:5432"

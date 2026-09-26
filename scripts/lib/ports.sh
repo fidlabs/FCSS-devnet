@@ -24,16 +24,9 @@
 : "${FCSS_INDEXER_HOST_PORT_2:=23002}"
 : "${FCSS_INDEXER_HOST_PORT_3:=23003}"
 
-# Oracle
-: "${FCSS_ORACLE_PG_HOST_PORT:=28038}"
-: "${FCSS_ORACLE_APP_HOST_PORT:=23100}"
-
-# Hyperion (PoRep indexer + REST; oracle still consumes via CDP_SERVICE_URL)
+# Hyperion (PoRep indexer + REST)
 : "${FCSS_HYPERION_PG_HOST_PORT:=28037}"
 : "${FCSS_HYPERION_APP_HOST_PORT:=23300}"
-# Back-compat aliases
-: "${FCSS_CDP_PG_HOST_PORT:=${FCSS_HYPERION_PG_HOST_PORT}}"
-: "${FCSS_CDP_APP_HOST_PORT:=${FCSS_HYPERION_APP_HOST_PORT}}"
 
 # Seed-deals fixture (unique manifests + CARs; avoids colliding with ad-hoc :8080/:7777)
 : "${FCSS_SEED_MANIFEST_HOST_PORT:=18080}"
@@ -45,14 +38,8 @@
 : "${CURIO_API_URL:=http://${FCSS_HOST}:${FCSS_CURIO_API_HOST_PORT}}"
 : "${CURIO_MARKET_URL:=http://${FCSS_HOST}:${FCSS_CURIO_MARKET_HOST_PORT}}"
 : "${CURIO_UI_URL:=http://${FCSS_HOST}:${FCSS_CURIO_UI_HOST_PORT}}"
-: "${ORACLE_DATABASE_URL:=postgresql://postgres:postgres@${FCSS_HOST}:${FCSS_ORACLE_PG_HOST_PORT}/postgres}"
-: "${ORACLE_APP_URL:=http://${FCSS_HOST}:${FCSS_ORACLE_APP_HOST_PORT}}"
 : "${HYPERION_DATABASE_URL:=postgresql://postgres:postgres@${FCSS_HOST}:${FCSS_HYPERION_PG_HOST_PORT}/postgres?schema=public&connection_limit=50}"
 : "${HYPERION_APP_URL:=http://${FCSS_HOST}:${FCSS_HYPERION_APP_HOST_PORT}}"
-# Oracle env key remains CDP_SERVICE_URL; point it at Hyperion by default.
-: "${CDP_DATABASE_URL:=${HYPERION_DATABASE_URL}}"
-: "${CDP_APP_URL:=${HYPERION_APP_URL}}"
-: "${CDP_SERVICE_URL:=${HYPERION_APP_URL}}"
 : "${SEED_MANIFEST_BASE_URL:=http://${FCSS_HOST}:${FCSS_SEED_MANIFEST_HOST_PORT}}"
 : "${SEED_PIECE_BASE_URL:=http://host.docker.internal:${FCSS_SEED_PIECE_HOST_PORT}/piece}"
 : "${DEV_CURIO_EXTERNAL_URL:=http://host.docker.internal:${FCSS_CURIO_MARKET_HOST_PORT}}"

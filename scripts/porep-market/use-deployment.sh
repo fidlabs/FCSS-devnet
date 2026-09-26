@@ -33,4 +33,4 @@ case "$1" in
 esac
 
 use_deployment_record "$1"
-log "done — consumers should refresh envs (just porep-market up / just oracle up)"
+log "done — consumers should refresh envs (just porep-market up / just hyperion up --force)"

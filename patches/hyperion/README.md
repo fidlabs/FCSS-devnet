@@ -2,7 +2,7 @@
 
 Unified diffs applied by [`scripts/hyperion/patch.sh`](../../scripts/hyperion/patch.sh) (via `just hyperion up` / `just init`) onto the pinned [`extern/hyperion`](../../extern/hyperion) submodule (`main`).
 
-Stock Hyperion targets **mainnet (314)** and **calibnet (314159)**, indexes from a calibnet origin block, binds Nest to port 3000, and runs PoRep/Pay indexers hourly (plus once on bootstrap). FCSS runs a short-lived Curio FEVM (`31415926`) and needs deals visible quickly for oracle/tooling. Drop each patch once upstream covers that gap.
+Stock Hyperion targets **mainnet (314)** and **calibnet (314159)**, indexes from a calibnet origin block, binds Nest to port 3000, and runs PoRep/Pay indexers hourly (plus once on bootstrap). FCSS runs a short-lived Curio FEVM (`31415926`) and needs deals visible quickly for tooling. Drop each patch once upstream covers that gap.
 
 | Patch | Why |
 |-------|-----|

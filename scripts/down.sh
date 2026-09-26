@@ -3,7 +3,6 @@
 #
 # Stops:
 #   - seed-deals HTTP (manifest) + Singularity content-provider container
-#   - oracle Postgres (compose down -v)
 #   - Hyperion Nest + Postgres (compose down -v)
 #   - Curio devnet (also rm -rf extern/curio/docker/data)
 #
@@ -53,9 +52,6 @@ stop_seed_servers() {
 
 log "FCSS down: stopping seed helpers"
 stop_seed_servers
-
-log "FCSS down: oracle"
-"${SCRIPT_DIR}/oracle/down.sh" || true
 
 log "FCSS down: hyperion"
 "${SCRIPT_DIR}/hyperion/down.sh" || true

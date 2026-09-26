@@ -59,7 +59,6 @@ patch_dir_for_key() {
   case "$1" in
     curio) echo curio ;;
     filecoin-porep-market-tooling) echo tooling ;;
-    filecoin-oracle-service) echo oracle ;;
     hyperion) echo hyperion ;;
     *) echo "" ;;
   esac

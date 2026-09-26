@@ -63,8 +63,6 @@ check_rpc
 check_http "Curio market" "${CURIO_MARKET_URL}/"
 check_http "Curio UI" "${CURIO_UI_URL}/" || true
 check_tcp "Curio API" "$FCSS_HOST" "$FCSS_CURIO_API_HOST_PORT"
-check_tcp "Oracle Postgres" "$FCSS_HOST" "$FCSS_ORACLE_PG_HOST_PORT"
-check_http "Oracle app" "${ORACLE_APP_URL}/deals?limit=1" || check_tcp "Oracle app" "$FCSS_HOST" "$FCSS_ORACLE_APP_HOST_PORT"
 check_tcp "Hyperion Postgres" "$FCSS_HOST" "$FCSS_HYPERION_PG_HOST_PORT"
 check_http "Hyperion app" "${HYPERION_APP_URL}/" || check_tcp "Hyperion app" "$FCSS_HOST" "$FCSS_HYPERION_APP_HOST_PORT"
 

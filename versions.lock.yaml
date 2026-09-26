@@ -26,12 +26,6 @@ submodules:
     ref: feature-v2-adjust-contracts
     notes: patches/tooling must apply cleanly.
 
-  filecoin-oracle-service:
-    path: extern/filecoin-oracle-service
-    repository: https://github.com/fidlabs/filecoin-oracle-service.git
-    commit: d30df2374143f2b8dfc952134777136bcc78878c
-    ref: v2
-    notes: patches/oracle must apply cleanly.
 
   hyperion:
     path: extern/hyperion

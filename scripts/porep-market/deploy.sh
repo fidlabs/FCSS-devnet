@@ -7,7 +7,7 @@
 #
 # porep-market main only ships calibnet/mainnet via `just deploy`; local FEVM uses
 # the same Deploy.s.sol entrypoint with unprefixed env vars (see gen-env.sh).
-# ViewHelper is not part of Deploy.s.sol — oracle getDealViews needs it separately.
+# ViewHelper is not part of Deploy.s.sol — deploy it separately for deal-view helpers.
 #
 # Prerequisites: docker lotus up, cast, jq, forge
 #

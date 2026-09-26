@@ -55,17 +55,6 @@ runtime_dump_stack() {
     ) || true
   fi
 
-  if [[ -f "${ORACLE_DIR:-}/docker-compose.yml" ]]; then
-    docker compose \
-      -f "${ORACLE_DIR}/docker-compose.yml" \
-      -f "${REPO_ROOT}/docker/oracle-compose.ports.yaml" \
-      ps >"${dir}/oracle-compose-ps.txt" 2>&1 || true
-    docker compose \
-      -f "${ORACLE_DIR}/docker-compose.yml" \
-      -f "${REPO_ROOT}/docker/oracle-compose.ports.yaml" \
-      logs --tail=100 >"${dir}/oracle-db.log" 2>&1 || true
-  fi
-
   if [[ -n "${RPC_URL:-}" ]]; then
     curl -sS -m 5 -X POST "$RPC_URL" \
       -H 'Content-Type: application/json' \

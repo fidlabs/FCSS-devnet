@@ -3,7 +3,7 @@
 #   1. Apply patches, write .env from ACTIVE/latest.json
 #   2. Postgres via docker/hyperion-compose.yaml
 #   3. npm ci / prisma generate+migrate / nest build
-#   4. Start Nest in the background (oracle stays foreground in just up)
+#   4. Start Nest in the background
 #
 # Prerequisites:
 #   - just porep-market deploy (ACTIVE / latest.json with market + FilecoinPay)
