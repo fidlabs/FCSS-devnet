@@ -55,6 +55,24 @@ runtime_dump_stack() {
     ) || true
   fi
 
+  # Hyperion Postgres compose + Nest app log (background pid under .runtime/).
+  if [[ -f "${REPO_ROOT}/docker/hyperion-compose.yaml" ]]; then
+    (
+      FCSS_HYPERION_PG_HOST_PORT="${FCSS_HYPERION_PG_HOST_PORT}" \
+        docker compose -f "${REPO_ROOT}/docker/hyperion-compose.yaml" ps \
+        >"${dir}/hyperion-compose-ps.txt" 2>&1 || true
+      FCSS_HYPERION_PG_HOST_PORT="${FCSS_HYPERION_PG_HOST_PORT}" \
+        docker compose -f "${REPO_ROOT}/docker/hyperion-compose.yaml" logs --tail=100 \
+        >"${dir}/hyperion-db.log" 2>&1 || true
+    ) || true
+  fi
+  if [[ -f "${RUNTIME_ROOT}/hyperion.log" ]]; then
+    tail -n 200 "${RUNTIME_ROOT}/hyperion.log" >"${dir}/hyperion.log" 2>/dev/null || true
+  fi
+  if [[ -f "${RUNTIME_ROOT}/hyperion.pid" ]]; then
+    cp "${RUNTIME_ROOT}/hyperion.pid" "${dir}/hyperion.pid" 2>/dev/null || true
+  fi
+
   if [[ -n "${RPC_URL:-}" ]]; then
     curl -sS -m 5 -X POST "$RPC_URL" \
       -H 'Content-Type: application/json' \

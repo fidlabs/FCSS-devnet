@@ -573,7 +573,6 @@ flowchart LR
 | Consumer need | Typical source |
 |---------------|----------------|
 | Rail `settledUpTo` / payee side of rail | Hyperion `GET /filecoin-pay/rails/:railId` |
-| Deal SLI averages | Hyperion `GET /po-rep/average-sli-data` (often fed by URL Finder measurements) |
 | Indexed deals (filters: provider, piece CID, rail state, …) | Hyperion `GET /po-rep/deals` |
 | Register deal for RPA measurement | URL Finder `/deals/*` |
 | Provider sample retrieval URL / RPA | URL Finder `/providers/*`, `/url/*` |

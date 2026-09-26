@@ -89,7 +89,6 @@ Override any `FCSS_*_HOST_PORT` / `FCSS_HOST` before sourcing scripts if needed.
 |-----|-------------------|
 | Indexed deals | `GET /po-rep/deals` |
 | Settlement (`settledUpTo`) | `GET /filecoin-pay/rails/:railId` |
-| Deal SLI averages | `GET /po-rep/average-sli-data?dealIds=…` |
 
 `just hyperion up` (also part of `just up`):
 
@@ -99,7 +98,7 @@ Override any `FCSS_*_HOST_PORT` / `FCSS_HOST` before sourcing scripts if needed.
 4. Runs Prisma migrate, builds Nest
 5. Starts Nest in the **background** (`.runtime/hyperion.pid`, logs `.runtime/hyperion.log`)
 
-Full Fil+ health checks (ipinfo / Filscan) may fail locally; PoRep index + rail/SLI APIs are what matter.
+Full Fil+ health checks (ipinfo / Filscan) may fail locally; PoRep deal + rail APIs are what matter.
 
 ```bash
 just hyperion up          # or: just hyperion up --foreground
