@@ -149,8 +149,8 @@ if [[ -z "$JOB_TRIGGER_AUTH_TOKEN" ]]; then
   fi
 fi
 
-# CDP / URL Finder: default CDP to local FCSS CDP app; URL Finder stays optional.
-CDP_SERVICE_URL="${CDP_SERVICE_URL:-${CDP_APP_URL}}"
+# Indexer API / URL Finder: default CDP_SERVICE_URL to local Hyperion; URL Finder stays optional.
+CDP_SERVICE_URL="${CDP_SERVICE_URL:-${HYPERION_APP_URL:-${CDP_APP_URL}}}"
 URL_FINDER_SERVICE_URL="${URL_FINDER_SERVICE_URL:-}"
 URL_FINDER_AUTH_TOKEN="${URL_FINDER_AUTH_TOKEN:-}"
 
@@ -259,11 +259,14 @@ if [[ ! -d node_modules ]]; then
   log "npm ci"
   npm ci
 fi
+# tsc imports prisma/generated — generate before build (no DB required).
+log "prisma generate"
+npm run prisma:generate
 log "npm run build"
 npm run build
 
 # ---------------------------------------------------------------------------
-# 2) Postgres + Prisma
+# 2) Postgres + Prisma schema push
 # ---------------------------------------------------------------------------
 
 require_file "$COMPOSE_FILE"

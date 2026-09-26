@@ -4,13 +4,13 @@
 
 PoRep Market **V2 only** (`extern/porep-market` on `main`): `Deploy.s.sol`, SPRegistry offers, `DataCapEvidenceAdapter`, V2 deal lifecycle. No V1 Client / `just devnet_deploy` flows.
 
-Pinned tips (see [`versions.lock.yaml`](versions.lock.yaml)): **Curio v1.28.2**, **porep-market** `main`, **tooling** `feature-v2-adjust-contracts`, **oracle** `v2`, **CDP** [`compliance-data-platform`](https://github.com/fidlabs/compliance-data-platform) `main`.
+Pinned tips (see [`versions.lock.yaml`](versions.lock.yaml)): **Curio v1.28.2**, **porep-market** `main`, **tooling** `feature-v2-adjust-contracts`, **oracle** `v2`, **Hyperion** [`hyperion`](https://github.com/fidlabs/hyperion) `main`.
 
 ## Prerequisites
 
 - Docker
 - `just`, `cast`, `jq`, `curl`, Foundry `forge`
-- Node.js 24+ / `npm` (oracle + CDP)
+- Node.js 24.11+ / `npm` (oracle + Hyperion)
 - `aria2c` (`make-deal` onboard)
 - Recursive git submodules (`just init` pulls forge libs under `extern/porep-market/lib/`)
 
@@ -21,9 +21,9 @@ git clone https://github.com/fidlabs/FCSS-devnet.git
 cd FCSS-devnet
 
 just init     # submodules, patches, Curio images, tooling venv, pin-verify
-just up       # Curio + V2 deploy + SP wiring + CDP (bg) + oracle (foreground)
+just up       # Curio + V2 deploy + SP wiring + Hyperion (bg) + oracle (foreground)
 # other terminal:
-just status   # Lotus / Curio / CDP / oracle / ACTIVE / pins
+just status   # Lotus / Curio / Hyperion / oracle / ACTIVE / pins
 
 # prepare + serve a deal manifest/pieces (see Singularity below), then:
 just make-deal
@@ -36,22 +36,22 @@ Skip steps when iterating: `SKIP_DOCKER=1`, `SKIP_VENV=1`, or `SKIP_PATCH=1` on 
 
 | Command | Safe? | What it does |
 |---------|-------|----------------|
-| `just init` | Yes | Submodules → Curio/tooling/oracle/cdp patches → `pin-verify` |
-| `just up` | Yes* | Bring stack up, deploy, wire SP, start CDP (background) + oracle |
-| `just status` | Yes | Probe RPC, Curio, CDP, oracle, `ACTIVE`, pins |
-| `just down` | **Destructive** | Stop stack; wipe Curio data, oracle/CDP volumes, `.runtime/`, `.deployment/` |
+| `just init` | Yes | Submodules → Curio/tooling/oracle/hyperion patches → `pin-verify` |
+| `just up` | Yes* | Bring stack up, deploy, wire SP, start Hyperion (background) + oracle |
+| `just status` | Yes | Probe RPC, Curio, Hyperion, oracle, `ACTIVE`, pins |
+| `just down` | **Destructive** | Stop stack; wipe Curio data, oracle/Hyperion volumes, `.runtime/`, `.deployment/` |
 | `just reset` | **Destructive** | `just down` + backup generated `.env` files → then `just up` |
 | `just make-deal …` | Yes | V2 deal pipeline (flags passed through) |
 | `just seed-deals …` | Yes | 3 clients × (2 private + 1 public), unique piece CIDs (Singularity) |
 
-\* `just up` starts CDP in the **background**, then ends in `just oracle up` (**foreground**).
+\* `just up` starts Hyperion in the **background**, then ends in `just oracle up` (**foreground**).
 
 ### `just down` vs `just reset`
 
 **`just down`** ([`scripts/down.sh`](scripts/down.sh)):
 
 - Stops seed-deals HTTP + Singularity content-provider container
-- Oracle + CDP: `docker compose down -v` (Postgres/DMOB volumes removed) and CDP Nest pid
+- Oracle + Hyperion: `docker compose down -v` (Postgres volumes removed) and Hyperion Nest pid
 - Curio: upstream `make devnet/down` → `docker compose down --rmi=local` **and** `rm -rf ./docker/data`
 - Deletes `.runtime/` (seed-deals, tooling onboard/logs, …) and `extern/porep-market/.deployment/`
 
@@ -81,35 +81,34 @@ FCSS publishes **non-default host ports** so it can sit beside another Curio/Lot
 | Yugabyte YSQL (host) | `25433` |
 | Oracle Postgres | `localhost:28038` |
 | Oracle HTTP | `http://127.0.0.1:23100` |
-| CDP Postgres | `localhost:28037` |
-| CDP DMOB mock Postgres | `localhost:28039` |
-| **CDP HTTP** | [http://127.0.0.1:23300](http://127.0.0.1:23300) (`/docs`, `/version`) |
+| Hyperion Postgres | `localhost:28037` |
+| **Hyperion HTTP** | [http://127.0.0.1:23300](http://127.0.0.1:23300) (`/docs`, `/`) |
 
 Override any `FCSS_*_HOST_PORT` / `FCSS_HOST` before sourcing scripts if needed.
 
-## Compliance Data Platform (CDP)
+## Hyperion
 
-[`extern/compliance-data-platform`](extern/compliance-data-platform) indexes PoRep Market + Filecoin Pay on the local Curio chain and feeds the oracle:
+[`extern/hyperion`](extern/hyperion) ([fidlabs/hyperion](https://github.com/fidlabs/hyperion)) indexes PoRep Market + Filecoin Pay on the local Curio chain and feeds the oracle (oracle still uses env key `CDP_SERVICE_URL`):
 
-| Oracle use | CDP endpoint |
-|------------|----------------|
+| Oracle use | Hyperion endpoint |
+|------------|-------------------|
 | Settlement (`settledUpTo`) | `GET /filecoin-pay/rails/:railId` |
 | Deal SLI averages | `GET /po-rep/average-sli-data?dealIds=…` |
 
-`just cdp up` (also part of `just up`):
+`just hyperion up` (also part of `just up`):
 
-1. Applies [`patches/cdp/`](patches/cdp/) (Curio chain `31415926`, index from genesis, `PORT` env)
+1. Applies [`patches/hyperion/`](patches/hyperion/) (Curio chain `31415926`, index from genesis, `PORT` env)
 2. Writes `.env` from ACTIVE deploy (market / SPRegistry / FilecoinPay + Lotus RPC)
-3. Starts CDP + DMOB-mock Postgres ([`docker/cdp-compose.yaml`](docker/cdp-compose.yaml))
-4. Seeds DMOB from `ci/dmob-mock-db.sql`, runs Prisma migrate, builds Nest
-5. Starts Nest in the **background** (`.runtime/cdp.pid`, logs `.runtime/cdp.log`)
+3. Starts Hyperion Postgres ([`docker/hyperion-compose.yaml`](docker/hyperion-compose.yaml))
+4. Runs Prisma migrate, builds Nest
+5. Starts Nest in the **background** (`.runtime/hyperion.pid`, logs `.runtime/hyperion.log`)
 
-Oracle `.env` defaults `CDP_SERVICE_URL` to `http://127.0.0.1:23300`. Full Fil+ health checks (ipinfo / Filscan / GitHub) may fail locally; PoRep index + rail/SLI APIs are what matter.
+Oracle `.env` defaults `CDP_SERVICE_URL` to `http://127.0.0.1:23300`. Full Fil+ health checks (ipinfo / Filscan) may fail locally; PoRep index + rail/SLI APIs are what matter.
 
 ```bash
-just cdp up          # or: just cdp up --foreground
-just cdp logs
-just cdp down
+just hyperion up          # or: just hyperion up --foreground
+just hyperion logs
+just hyperion down
 ```
 
 ## Pins (`versions.lock.yaml`)
@@ -124,7 +123,7 @@ Checks:
 
 1. Each submodule `HEAD` matches the lock commit  
 2. Parent gitlink matches the lock commit  
-3. `patches/{curio,tooling,oracle,cdp}/*.patch` apply cleanly on that commit  
+3. `patches/{curio,tooling,oracle,hyperion}/*.patch` apply cleanly on that commit  
 
 **Bump pins:** update submodule gitlinks → refresh patches if needed → rewrite commits in the lockfile → `just pin-verify`.
 
@@ -177,7 +176,7 @@ Orchestration: [`scripts/porep-market/`](scripts/porep-market/) + [`scripts/tool
 | [`porep-market`](extern/porep-market) (**main** / V2) | Market, SPRegistry, DataCapEvidenceAdapter |
 | [`filecoin-porep-market-tooling`](extern/filecoin-porep-market-tooling) (`feature-v2-adjust-contracts`) | Client / SP / admin CLI |
 | [`filecoin-oracle-service`](extern/filecoin-oracle-service) (`v2`) | Settlement / SLI jobs |
-| [`compliance-data-platform`](extern/compliance-data-platform) (`main`) | PoRep/Pay indexer + APIs for oracle settlement/SLI |
+| [`hyperion`](extern/hyperion) (`main`) | PoRep/Pay indexer + APIs for oracle settlement/SLI |
 | [`large-paid-retrievals`](https://github.com/fidlabs/large-paid-retrievals) | `sp-proxy` + `retrieval-client` against this devnet |
 
 All five code deps are git submodules under [`extern/`](extern/).
@@ -188,9 +187,9 @@ Root recipes ([`justfile`](justfile)) compose modules in [`just/`](just/):
 
 | Recipe | Does |
 |--------|------|
-| `just init` | submodule update → curio/tooling/oracle/cdp patches → `pin-verify` |
+| `just init` | submodule update → curio/tooling/oracle/hyperion patches → `pin-verify` |
 | `just pin-verify` | lockfile vs HEADs/gitlinks + patch `--check` |
-| `just up` | curio up → deploy → SP up → CDP (bg) → oracle (foreground) |
+| `just up` | curio up → deploy → SP up → Hyperion (bg) → oracle (foreground) |
 | `just status` | health probes + ACTIVE + pin-verify (warn) |
 | `just down` | stop stack; wipe Curio data, DB volumes, `.runtime/`, `.deployment/` |
 | `just reset` | `just down` + backup `.env` → `just up` |
@@ -203,18 +202,18 @@ Namespaced:
 - `just porep-market gen-env\|deploy\|up\|tooling-env\|use-deployment`
 - `just tooling patch\|init\|make-deal\|seed-deals`
 - `just oracle patch\|up\|get-deals\|logs\|down`
-- `just cdp patch\|up\|logs\|down`
+- `just hyperion patch\|up\|logs\|down`
 
 ### Oracle notes
 
 - Cron vars (`TRIGGER_*_CRON`, `SYNC_URL_FINDER_*`) live in `extern/filecoin-oracle-service/.env` (kept across `just oracle up` unless you `--force` without preserving). Override when regenerating, e.g. `TRIGGER_SYNC_DEALS_JOB_INTERVAL_CRON='* * * * *' just oracle up --force`.
-- `CDP_SERVICE_URL` defaults to the local CDP app (`http://127.0.0.1:23300`). Optional still: `URL_FINDER_SERVICE_URL` / `URL_FINDER_AUTH_TOKEN`. Deal sync and `just oracle get-deals` work without URL Finder.
+- `CDP_SERVICE_URL` defaults to the local Hyperion app (`http://127.0.0.1:23300`). Optional still: `URL_FINDER_SERVICE_URL` / `URL_FINDER_AUTH_TOKEN`. Deal sync and `just oracle get-deals` work without URL Finder.
 
 ### Upstream patch TODO
 
 - **Oracle** — [`patches/oracle/`](patches/oracle/): settlement genesis, crons, ViewHelper `getDealViews`, V2 ABI, skip unset claim inspector. Drop once merged to `v2`.
 - **Tooling** — [`patches/tooling/`](patches/tooling/): compose deal view, `submit-evidence`, `proposeDeal` `dealType`. Drop once merged.
-- **CDP** — [`patches/cdp/`](patches/cdp/): Curio chain id `31415926`, genesis origin, `PORT` env. Drop once upstream supports local FEVM.
+- **Hyperion** — [`patches/hyperion/`](patches/hyperion/): Curio chain id `31415926`, genesis origin, `PORT` env. Drop once upstream supports local FEVM.
 - **Curio** — [`patches/curio/`](patches/curio/) are **environmental only** (host ports, IPNI, docker build); not for upstream.
 
 ## Scripts
@@ -234,7 +233,7 @@ Shared libs: [`scripts/lib/`](scripts/lib/) (`common.sh`, `ports.sh`, `runtime.s
 | `scripts/pins/verify.sh` | Lock + patch checks |
 | `scripts/status.sh` | Stack health |
 | `scripts/reset.sh` | Destructive wipe → `just up` |
-| `scripts/cdp/patch.sh` / `up.sh` / `down.sh` | CDP patches + Postgres/DMOB + Nest |
+| `scripts/hyperion/patch.sh` / `up.sh` / `down.sh` | Hyperion patches + Postgres + Nest |
 | `scripts/tooling/init.sh` / `patch.sh` / `make-deal.sh` | Tooling venv + V2 deal path |
 | `scripts/oracle/up.sh` / `patch.sh` / `get-deals.sh` / `db-schema.sh` | Oracle bring-up and queries |
 
@@ -243,8 +242,8 @@ Also: [`contracts/allocator/NoOpMetaAllocator.{sol,json}`](contracts/allocator/)
 ## Typical flow
 
 1. `just init`
-2. `just up` (CDP background; leave oracle running; use another terminal for the rest)
-3. `just status` — confirm Curio UI at [http://127.0.0.1:24701](http://127.0.0.1:24701), CDP at [http://127.0.0.1:23300/version](http://127.0.0.1:23300/version), and Lotus RPC
+2. `just up` (Hyperion background; leave oracle running; use another terminal for the rest)
+3. `just status` — confirm Curio UI at [http://127.0.0.1:24701](http://127.0.0.1:24701), Hyperion at [http://127.0.0.1:23300/](http://127.0.0.1:23300/), and Lotus RPC
 4. Prepare dataset + serve manifest/pieces → `just make-deal`
 5. Optional: `eval "$(just porep-market tooling-env)"` and run [`large-paid-retrievals`](https://github.com/fidlabs/large-paid-retrievals)
 
@@ -450,7 +449,7 @@ Onboard CARs/manifests land in `.runtime/tooling/deal-<id>/`; CLI tx logs in `.r
 
 ### Seed many deals (3 clients × 2 private + 1 public)
 
-For CDP/oracle fixtures with **distinct owners**, **both deal types**, and **unique `pieceCid`s** per deal:
+For Hyperion/oracle fixtures with **distinct owners**, **both deal types**, and **unique `pieceCid`s** per deal:
 
 ```bash
 just seed-deals
@@ -470,7 +469,7 @@ No host `singularity` binary is required — only Docker. Override image with `S
 
 This is **slow** (nine sealing/evidence waits). Escape hatch: `--manifests-file` with `{client,dealType,manifestUrl}` objects if you already have unique manifests.
 
-Afterward, CDP `GET /po-rep/deals?pieceCID=<cid>` should return a single deal.
+Afterward, Hyperion `GET /po-rep/deals?pieceCID=<cid>` should return a single deal.
 
 **Claims vs allocations:** Curio sealing creates VerifReg claims (same numeric IDs as allocations). `sp get-claims` only shows IDs already on the `DataCapEvidenceAdapter`. `make-deal` waits for Lotus allocations to clear, runs `admin submit-evidence`, then confirms via `sp get-claims`.
 

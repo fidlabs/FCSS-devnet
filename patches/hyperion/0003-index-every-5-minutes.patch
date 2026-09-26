@@ -1,0 +1,14 @@
+diff --git a/src/po-rep-indexer/runners/abstract-po-rep-indexer.runner.ts b/src/po-rep-indexer/runners/abstract-po-rep-indexer.runner.ts
+index e764ff9..145dac0 100644
+--- a/src/po-rep-indexer/runners/abstract-po-rep-indexer.runner.ts
++++ b/src/po-rep-indexer/runners/abstract-po-rep-indexer.runner.ts
+@@ -69,7 +69,8 @@ export abstract class AbstractPoRepIndexerRunner<
+     void this.execute();
+   }
+ 
+-  @Cron(CronExpression.EVERY_HOUR)
++  // Run every 5 minutes locally so new deals appear quickly (stock: EVERY_HOUR).
++  @Cron(CronExpression.EVERY_5_MINUTES)
+   public async execute() {
+     this.logger.log('Starting indexing');
+ 

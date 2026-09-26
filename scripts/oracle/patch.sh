@@ -6,7 +6,7 @@
 #   ./scripts/oracle/patch.sh
 #   just oracle patch
 #
-# Preserves .env, node_modules, and dist across reset/clean.
+# Preserves .env, node_modules, dist, and prisma/generated across reset/clean.
 # Compatible with macOS /bin/bash 3.2.
 
 set -euo pipefail
@@ -23,6 +23,7 @@ cd "$REPO_ROOT"
 apply_patches "$ORACLE_DIR" "$ORACLE_PATCH_DIR" "oracle" \
   -e .env \
   -e node_modules \
-  -e dist
+  -e dist \
+  -e prisma/generated
 
 log "oracle patches applied"

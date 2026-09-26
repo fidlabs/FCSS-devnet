@@ -1,5 +1,5 @@
 diff --git a/src/service/erc20-token-info/erc20-token-info.service.ts b/src/service/erc20-token-info/erc20-token-info.service.ts
-index 94cb9a0..cc39dc3 100644
+index 94cb9a0..6ef7670 100644
 --- a/src/service/erc20-token-info/erc20-token-info.service.ts
 +++ b/src/service/erc20-token-info/erc20-token-info.service.ts
 @@ -1,5 +1,5 @@
@@ -13,7 +13,7 @@ index 94cb9a0..cc39dc3 100644
    'function decimals() view returns (uint8)',
  ]);
  
-+/** Fallback when the address has no code / is not ERC-20 (stale CDP rows after chain reset). */
++/** Fallback when the address has no code / is not ERC-20 (stale rows after chain reset). */
 +const UNKNOWN_TOKEN_SYMBOL = 'UNKNOWN';
 +const UNKNOWN_TOKEN_DECIMALS = 18;
 +

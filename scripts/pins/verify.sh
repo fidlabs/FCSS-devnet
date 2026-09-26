@@ -60,7 +60,7 @@ patch_dir_for_key() {
     curio) echo curio ;;
     filecoin-porep-market-tooling) echo tooling ;;
     filecoin-oracle-service) echo oracle ;;
-    compliance-data-platform) echo cdp ;;
+    hyperion) echo hyperion ;;
     *) echo "" ;;
   esac
 }

@@ -1,0 +1,26 @@
+# FCSS-owned Hyperion compose: Postgres only (no DMOB).
+# Host port remapped away from stock Hyperion 8099.
+# Postgres 18 images expect the volume at /var/lib/postgresql (not .../data).
+name: fcss-hyperion
+
+services:
+  hyperion-db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      PGUSER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "${FCSS_HYPERION_PG_HOST_PORT:-28037}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - hyperion_postgres_data:/var/lib/postgresql
+
+volumes:
+  hyperion_postgres_data:
