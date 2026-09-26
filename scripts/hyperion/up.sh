@@ -25,7 +25,6 @@ source "${SCRIPT_DIR}/../lib/common.sh"
 
 FORCE=false
 FOREGROUND=false
-OUT_FILE=""
 
 usage() {
   cat <<'EOF'
@@ -36,7 +35,6 @@ Write hyperion/.env, start Postgres + Prisma, then Nest.
 Options:
   --force           Overwrite existing .env without backup
   --foreground      Run npm start in foreground (default: background)
-  --out FILE        .env path (default: <HYPERION_DIR>/.env)
   -h, --help        Show this help
 EOF
 }
@@ -45,7 +43,6 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --force) FORCE=true; shift ;;
     --foreground) FOREGROUND=true; shift ;;
-    --out) OUT_FILE="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown option: $1 (try --help)" ;;
   esac
@@ -53,7 +50,7 @@ done
 
 : "${HYPERION_DIR:=${REPO_ROOT}/extern/hyperion}"
 COMPOSE_FILE="${REPO_ROOT}/docker/hyperion-compose.yaml"
-OUT_FILE="${OUT_FILE:-${HYPERION_DIR}/.env}"
+OUT_FILE="${HYPERION_DIR}/.env"
 PID_FILE="${RUNTIME_ROOT}/hyperion.pid"
 LOG_FILE="${RUNTIME_ROOT}/hyperion.log"
 

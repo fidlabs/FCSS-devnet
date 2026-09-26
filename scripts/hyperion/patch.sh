@@ -6,7 +6,7 @@
 #   ./scripts/hyperion/patch.sh
 #   just hyperion patch
 #
-# Preserves .env, node_modules, and dist across reset/clean.
+# Preserves .env, .env.bak*, node_modules, and dist across reset/clean.
 # Compatible with macOS /bin/bash 3.2.
 
 set -euo pipefail
@@ -22,6 +22,7 @@ cd "$REPO_ROOT"
 
 apply_patches "$HYPERION_DIR" "$HYPERION_PATCH_DIR" "hyperion" \
   -e .env \
+  -e '.env.bak*' \
   -e node_modules \
   -e dist \
   -e src/generated \

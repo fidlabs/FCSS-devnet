@@ -138,7 +138,7 @@ Deployed by `just porep-market deploy`; addresses live under `extern/porep-marke
 ### Hyperion
 
 - Indexes PoRep Market + Filecoin Pay events from genesis on the local chain.
-- Exposes REST for deals, rails, and SLI averages (`/po-rep/*`, `/filecoin-pay/*`).
+- Exposes REST for deals and rails (`/po-rep/*`, `/filecoin-pay/*`).
 - Optionally ingests provider retrievability from URL Finder (`URL_FINDER_API_URL`).
 - Host HTTP (FCSS): `http://127.0.0.1:23300` (`/docs`, `/`).
 
@@ -150,7 +150,7 @@ Deployed by `just porep-market deploy`; addresses live under `extern/porep-marke
   - **Deal SLI flow** — register a deal target (provider, manifest hash/URL, size, optional SLI requirements); RPA verifies the manifest, samples pieces, and exposes deal-level SLI state.
 - APIs: `/deals/*` (Deal SLI, bearer auth), `/providers/*`, `/clients/*`, legacy `/url/*`. Local default port `3010` (Swagger at `/`).
 - **Not** started by `just up` in this repo; Hyperion optionally points at a running instance via `URL_FINDER_API_URL`.
-- Feeds Hyperion’s `provider_url_finder_*` tables / SLI averages.
+- Feeds Hyperion’s `provider_url_finder_*` tables.
 
 ```mermaid
 flowchart LR
