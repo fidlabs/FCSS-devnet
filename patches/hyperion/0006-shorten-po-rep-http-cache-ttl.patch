@@ -1,0 +1,14 @@
+diff --git a/src/controller/po-rep/po-rep.controller.ts b/src/controller/po-rep/po-rep.controller.ts
+index 6725b34..66fac37 100644
+--- a/src/controller/po-rep/po-rep.controller.ts
++++ b/src/controller/po-rep/po-rep.controller.ts
+@@ -24,7 +24,8 @@ import {
+ import { ControllerBase } from '../base/controller-base';
+ 
+ @Controller('po-rep')
+-@CacheTTL(1000 * 60 * 30) // 30 minutes
++// FCSS local: short TTL so empty pre-index responses do not stick for 30m.
++@CacheTTL(1000 * 5) // 5 seconds
+ export class PoRepController extends ControllerBase {
+   constructor(
+     @Inject(CACHE_MANAGER) private _cacheManager: Cache,

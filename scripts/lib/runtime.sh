@@ -55,15 +55,22 @@ runtime_dump_stack() {
     ) || true
   fi
 
-  if [[ -f "${ORACLE_DIR:-}/docker-compose.yml" ]]; then
-    docker compose \
-      -f "${ORACLE_DIR}/docker-compose.yml" \
-      -f "${REPO_ROOT}/docker/oracle-compose.ports.yaml" \
-      ps >"${dir}/oracle-compose-ps.txt" 2>&1 || true
-    docker compose \
-      -f "${ORACLE_DIR}/docker-compose.yml" \
-      -f "${REPO_ROOT}/docker/oracle-compose.ports.yaml" \
-      logs --tail=100 >"${dir}/oracle-db.log" 2>&1 || true
+  # Hyperion Postgres compose + Nest app log (background pid under .runtime/).
+  if [[ -f "${REPO_ROOT}/docker/hyperion-compose.yaml" ]]; then
+    (
+      FCSS_HYPERION_PG_HOST_PORT="${FCSS_HYPERION_PG_HOST_PORT}" \
+        docker compose -f "${REPO_ROOT}/docker/hyperion-compose.yaml" ps \
+        >"${dir}/hyperion-compose-ps.txt" 2>&1 || true
+      FCSS_HYPERION_PG_HOST_PORT="${FCSS_HYPERION_PG_HOST_PORT}" \
+        docker compose -f "${REPO_ROOT}/docker/hyperion-compose.yaml" logs --tail=100 \
+        >"${dir}/hyperion-db.log" 2>&1 || true
+    ) || true
+  fi
+  if [[ -f "${RUNTIME_ROOT}/hyperion.log" ]]; then
+    tail -n 200 "${RUNTIME_ROOT}/hyperion.log" >"${dir}/hyperion.log" 2>/dev/null || true
+  fi
+  if [[ -f "${RUNTIME_ROOT}/hyperion.pid" ]]; then
+    cp "${RUNTIME_ROOT}/hyperion.pid" "${dir}/hyperion.pid" 2>/dev/null || true
   fi
 
   if [[ -n "${RPC_URL:-}" ]]; then

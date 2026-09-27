@@ -4,7 +4,7 @@
 #
 # Wipe (via just down / scripts/down.sh):
 #   - Curio docker data
-#   - Oracle / CDP Postgres volumes
+#   - Hyperion Postgres volumes
 #   - .runtime/ and porep-market .deployment/
 #
 # Additionally:
@@ -44,8 +44,7 @@ log "FCSS reset: just down (services + runtime data)"
 log "backing up generated env files"
 backup_env "${POREP_MARKET_DIR}/.env"
 backup_env "${TOOLING_DIR}/.env"
-backup_env "${ORACLE_DIR}/.env"
-backup_env "${CDP_DIR}/.env"
+backup_env "${HYPERION_DIR}/.env"
 
 log "bringing stack back up (just up)"
 (

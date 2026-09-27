@@ -2,7 +2,7 @@
 
 How the local **Filecoin Cold Storage Service** stack fits together: services, on-chain contracts, identities (IDs and wallets), and how money and deals flow between them.
 
-This is the mental model for Curio + Lotus, PoRep Market V2, Filecoin Pay, CDP, the oracle, [URL Finder / RPA](https://github.com/fidlabs/provider-sample-url-finder), and adjacent apps such as the [PIDS / TOADS directory frontend](https://github.com/fidlabs/pids-frontend). Contract code and `extern/*/README.md` remain authoritative for ABIs and edge cases.
+This is the mental model for Curio + Lotus, PoRep Market V2, Filecoin Pay, Hyperion, [URL Finder / RPA](https://github.com/fidlabs/provider-sample-url-finder), and adjacent apps such as the [PIDS / TOADS directory frontend](https://github.com/fidlabs/pids-frontend). Contract code and `extern/*/README.md` remain authoritative for ABIs and edge cases.
 
 ---
 
@@ -22,8 +22,7 @@ flowchart TB
   end
 
   subgraph OffChain["Off-chain services"]
-    Oracle["Oracle service<br/>jobs + HTTP API"]
-    CDP["CDP<br/>indexer + REST API"]
+    Hyperion["Hyperion<br/>indexer + REST API"]
     URLFinder["URL Finder / RPA<br/>not in this repo"]
     Curio["Curio<br/>sealing · market · UI"]
     Lotus["Lotus node<br/>chain RPC / consensus"]
@@ -44,8 +43,7 @@ flowchart TB
 
   subgraph Storage["Storage / DBs"]
     YB[(Yugabyte<br/>Curio)]
-    OracleDB[(Oracle Postgres)]
-    CDPDB[(CDP Postgres)]
+    HyperionDB[(Hyperion Postgres)]
   end
 
   PIDS -.->|dataset catalog / TOADS manifests| Singularity
@@ -63,15 +61,8 @@ flowchart TB
   Retrievals --> Curio
   Retrievals --> Lotus
 
-  Oracle --> Lotus
-  Oracle --> CDP
-  Oracle -->|register deal SLI targets| URLFinder
-  Oracle --> PoRep
-  Oracle --> Pay
-  Oracle --> SLIOracle
-  Oracle --> Evidence
-  CDP --> Lotus
-  CDP -->|provider retrievability metrics| URLFinder
+  Hyperion --> Lotus
+  Hyperion -->|provider retrievability metrics| URLFinder
   URLFinder --> Lotus
   URLFinder -.->|HTTP piece checks| Curio
   Curio --> Lotus
@@ -88,9 +79,10 @@ flowchart TB
   Validator --> PoRep
   Pay --> Token
   Pay --> Validator
+  AdminCLI --> Evidence
+  AdminCLI --> SLIOracle
 
-  Oracle --> OracleDB
-  CDP --> CDPDB
+  Hyperion --> HyperionDB
 
   classDef external fill:#d4d4d4,stroke:#8a8a8a,color:#4a4a4a
   class PIDS,URLFinder external
@@ -103,9 +95,9 @@ Grey nodes (**PIDS**, **URL Finder / RPA**) are **not** shipped in this repo —
 |-------|-----------------|
 | **Product / discovery** | [pids-frontend](https://github.com/fidlabs/pids-frontend) TOADS directory (*external*, not in this docker-devnet) |
 | **Actors** | Humans / scripts that propose deals, onboard data, register SPs |
-| **Off-chain** | Curio (SP runtime), Lotus (chain), CDP (index), Oracle (automation), [URL Finder / RPA](https://github.com/fidlabs/provider-sample-url-finder) (*external*), retrieval clients |
+| **Off-chain** | Curio (SP runtime), Lotus (chain), Hyperion (index), [URL Finder / RPA](https://github.com/fidlabs/provider-sample-url-finder) (*external*), retrieval clients |
 | **On-chain** | Market, registry, evidence, per-deal validators, Filecoin Pay rails |
-| **Storage** | Curio Yugabyte; Oracle/CDP Postgres |
+| **Storage** | Curio Yugabyte; Hyperion Postgres |
 
 ---
 
@@ -114,7 +106,7 @@ Grey nodes (**PIDS**, **URL Finder / RPA**) are **not** shipped in this repo —
 ### Lotus
 
 - Filecoin full node for the local Curio docker-devnet chain.
-- FEVM RPC surface used by tooling, CDP, and oracle (`Filecoin.*` + Ethereum JSON-RPC).
+- FEVM RPC surface used by tooling and Hyperion (`Filecoin.*` + Ethereum JSON-RPC).
 - Host RPC (FCSS defaults): `http://127.0.0.1:2234/rpc/v1`.
 
 ### Curio
@@ -141,41 +133,33 @@ Deployed by `just porep-market deploy`; addresses live under `extern/porep-marke
 
 - Holds client deposits (per token / account).
 - Creates **payment rails** (`from` client → `to` payee) operated by the deal’s Validator.
-- Settles rails when the oracle (or other operator) calls settle; Validator validates amounts via PoRepMarket.
+- Settles rails when an authorized operator calls settle; Validator validates amounts via PoRepMarket.
 
-### Compliance Data Platform (CDP)
+### Hyperion
 
 - Indexes PoRep Market + Filecoin Pay events from genesis on the local chain.
-- Exposes REST used by the oracle (rails, SLI averages, deals APIs).
+- Exposes REST for deals and rails (`/po-rep/*`, `/filecoin-pay/*`).
 - Optionally ingests provider retrievability from URL Finder (`URL_FINDER_API_URL`).
-- Host HTTP (FCSS): `http://127.0.0.1:23300` (`/docs`, `/version`).
-
-### Oracle service
-
-- Cron/manual jobs: sync deals, submit/activate evidence, publish SLIs, settle rails, finalize deals.
-- Reads chain via Lotus RPC; reads indexed facts via CDP; writes attestations / settlements on-chain.
-- Optionally registers Deal SLI targets with URL Finder (`URL_FINDER_SERVICE_URL` / `URL_FINDER_AUTH_TOKEN`; job `SYNC_URL_FINDER_SLI_TARGETS_*`). Local deal sync works without URL Finder.
-- Host HTTP (FCSS): `http://127.0.0.1:23100`.
+- Host HTTP (FCSS): `http://127.0.0.1:23300` (`/docs`, `/`).
 
 ### URL Finder / RPA ([fidlabs/provider-sample-url-finder](https://github.com/fidlabs/provider-sample-url-finder))
 
 - Microservice for **Random Piece Availability (RPA)**: map storage provider IDs to sample HTTP retrieval URLs and measure retrievability / bandwidth.
 - Two flows:
   - **Provider flow** — discover SP HTTP endpoints (Lotus peer IDs, `cid.contact`, filspark), test piece URLs, store provider-level retrievability / URL / BMS metrics.
-  - **Deal SLI flow** — PoRep/oracle registers a deal target (provider, manifest hash/URL, size, optional SLI requirements); RPA verifies the manifest, samples pieces, and exposes deal-level SLI state.
+  - **Deal SLI flow** — register a deal target (provider, manifest hash/URL, size, optional SLI requirements); RPA verifies the manifest, samples pieces, and exposes deal-level SLI state.
 - APIs: `/deals/*` (Deal SLI, bearer auth), `/providers/*`, `/clients/*`, legacy `/url/*`. Local default port `3010` (Swagger at `/`).
-- **Not** started by `just up` in this repo; CDP (`URL_FINDER_API_URL`) and oracle (`URL_FINDER_SERVICE_URL`) optionally point at a running instance.
-- Feeds CDP’s `provider_url_finder_*` tables / SLI averages that the oracle uses when settling and scoring deals.
+- **Not** started by `just up` in this repo; Hyperion optionally points at a running instance via `URL_FINDER_API_URL`.
+- Feeds Hyperion’s `provider_url_finder_*` tables.
 
 ```mermaid
 flowchart LR
-  Oracle["Oracle"] -->|POST deal SLI targets| UF["URL Finder / RPA"]
-  CDP["CDP"] -->|pull provider metrics| UF
+  Hyperion["Hyperion"] -->|pull provider metrics| UF["URL Finder / RPA"]
   UF --> Lotus["Lotus RPC"]
   UF -->|ranged GET pieces| SPHTTP["SP HTTP endpoints"]
-  UF -->|deal / provider SLI state| CDP
-  CDP -->|average SLI for deals| Oracle
-  Oracle -->|setSLI / settle| Chain["PoRepMarket / SLIOracle / Pay"]
+  UF -->|deal / provider SLI state| Hyperion
+  AdminCLI["Admin / tooling"] -->|setSLI / settle| Chain["PoRepMarket / SLIOracle / Pay"]
+  Hyperion -.->|indexed facts| AdminCLI
 
   classDef external fill:#d4d4d4,stroke:#8a8a8a,color:#4a4a4a
   class UF external
@@ -358,8 +342,7 @@ flowchart TB
     Registry["SPRegistry.registerProviderFor<br/>(admin; does not create actor)"]
     Market["PoRepMarket deal.provider"]
     Claims["VerifReg claims / DDO<br/>claim --actor &lt;id&gt;"]
-    CDPIdx["CDP po_rep_deal.providerId"]
-    OracleJobs["Oracle deal sync / jobs"]
+    HyperionIdx["Hyperion po_rep_deal.providerId"]
   end
 
   MinerID --> LotusMiner
@@ -367,8 +350,7 @@ flowchart TB
   MinerID --> Registry
   Registry --> Market
   MinerID --> Claims
-  Market --> CDPIdx
-  Market --> OracleJobs
+  Market --> HyperionIdx
 ```
 
 #### Devnet miners: IDs and purposes
@@ -399,7 +381,7 @@ flowchart LR
 | Actor ID | Runtime | Purpose | PoRep Market |
 |----------|---------|---------|--------------|
 | **`t01000`** | **`lotus-miner`** container | **Genesis / consensus miner.** Pre-sealed into localnet genesis (`lotus-seed` → `lotus-miner init --genesis-miner --actor=t01000`). Keeps the chain producing blocks. Used as the bootstrap actor when Curio runs `sptool --actor t01000 actor new-miner`. | **Not** the deal SP by default. Skipped at `just porep-market up` (`REGISTER_LOTUS_MINER=false`). If already registered from an older run, setup **pauses** it so `proposeDeal` does not match it (Curio cannot seal for `t01000`). |
-| **Curio miner** (often **`t01004`** on this stack; always “the `list-miners` entry that is not `t01000`”) | **`curio`** container | **Storage / deal miner.** Created on Curio first boot via `actor new-miner`; ID = next Init actor id. Written to Curio `MinerAddresses` / `Miners`. Seals sectors, runs market/DDO claims (`sptool --actor <id>`, `curio market ddo --actor <id>`). | **Registered** as SPRegistry `provider` + offers. This is the ID that appears on PoRep deals and in CDP as `providerId`. Stored as `CURIO_MINER_ID` in tooling `.env`. |
+| **Curio miner** (often **`t01004`** on this stack; always “the `list-miners` entry that is not `t01000`”) | **`curio`** container | **Storage / deal miner.** Created on Curio first boot via `actor new-miner`; ID = next Init actor id. Written to Curio `MinerAddresses` / `Miners`. Seals sectors, runs market/DDO claims (`sptool --actor <id>`, `curio market ddo --actor <id>`). | **Registered** as SPRegistry `provider` + offers. This is the ID that appears on PoRep deals and in Hyperion as `providerId`. Stored as `CURIO_MINER_ID` in tooling `.env`. |
 
 Example from a live FCSS chain (`lotus state get-actor`):
 
@@ -433,7 +415,7 @@ docker exec lotus lotus state get-actor t01003
 | Block production / localnet consensus | `t01000` (`lotus-miner`) |
 | PoRep propose / accept / onboard / claim | Curio miner (`CURIO_MINER_ID`, often `t01004`) |
 | SPRegistry `provider` / deal `provider_id` | Curio miner |
-| CDP / oracle deal `providerId` | Curio miner |
+| Hyperion deal `providerId` | Curio miner |
 | `REGISTER_LOTUS_MINER=true` experiments | Also `t01000` (not needed for normal FCSS deals) |
 
 ##### Market escrow (what `t05` funding is)
@@ -468,8 +450,7 @@ If `list-miners` already shows `t01004` as the Curio miner, “fund `t01004` esc
 | **MinerUtils / control addresses** | **Authorize** SP callers against the miner actor (owner/worker/control), not against org address alone |
 | **DataCap / VerifReg / Curio DDO** | **Claim / allocate** storage against the same actor (`--actor <provider_id>`) |
 | **Filecoin Pay** | Does **not** use miner ID on the rail (`from`/`to` are EVM payee/client); payee is looked up from SPRegistry by provider |
-| **CDP** | **Indexes** `providerId` from market events into `po_rep_deal` (filter deals by provider) |
-| **Oracle** | **Reads** deals (and thus provider IDs) from market / CDP for evidence, SLI, settlement jobs |
+| **Hyperion** | **Indexes** `providerId` from market events into `po_rep_deal` (filter deals by provider) |
 | **URL Finder / RPA** | **Measures** HTTP retrievability keyed by provider ID (and registered deal targets) |
 | **Tooling CLI** | **Passes** `provider_id` / discovers via `sp get-registered-info` (SPRegistry), not by creating miners |
 
@@ -538,8 +519,8 @@ sequenceDiagram
   participant V as Validator
   participant P as FilecoinPay
   participant SP as SP / Curio
-  participant O as Oracle
-  participant CDP as CDP
+  participant Admin as Admin / tooling
+  participant Hyperion as Hyperion
   participant UF as URL Finder
 
   C->>M: proposeDeal(request)
@@ -553,40 +534,37 @@ sequenceDiagram
   V->>M: updateRailId
 
   SP->>SP: onboard pieces, claim allocations
-  O->>M: submitEvidenceBatch / activateEvidence
+  Admin->>M: submitEvidenceBatch / activateEvidence
   M->>R: commit capacity
   Note over M: deal ACTIVE, payments can accrue
 
   loop settlement window
-    O->>UF: register / refresh Deal SLI targets
-    UF->>UF: measure piece HTTP / BMS
-    CDP->>CDP: index rails / pull URL Finder metrics
-    O->>CDP: average SLI / rail state
-    O->>P: settleRail
+    UF->>UF: measure piece HTTP / BMS (optional)
+    Hyperion->>Hyperion: index rails / pull URL Finder metrics
+    Admin->>Hyperion: rail / SLI state (optional)
+    Admin->>P: settleRail
     P->>V: validatePayment
     V->>M: validateDealSettlement
   end
 
-  C/O->>M: finalizeDeal
+  C->>M: finalizeDeal
   M->>V: terminate rail
   M->>R: release committed capacity
 ```
 
 ---
 
-## 6. Off-chain data path (CDP + oracle + URL Finder)
+## 6. Off-chain data path (Hyperion + URL Finder)
 
 ```mermaid
 flowchart LR
-  Chain["Lotus / FEVM logs"] --> CDP["CDP indexer"]
-  CDP --> API["CDP REST<br/>/po-rep/* /filecoin-pay/*"]
-  API --> Oracle["Oracle jobs"]
-  Oracle -->|Deal SLI targets| UF["URL Finder / RPA"]
-  UF -->|provider / deal metrics| CDP
+  Chain["Lotus / FEVM logs"] --> Hyperion["Hyperion indexer"]
+  Hyperion --> API["Hyperion REST<br/>/po-rep/* /filecoin-pay/*"]
+  API --> Consumers["Tooling / apps / operators"]
+  UF["URL Finder / RPA"] -->|provider / deal metrics| Hyperion
   UF --> Chain
   UF -.->|piece HTTP probes| SP["SP retrieval endpoints"]
-  Oracle --> Chain
-  Oracle --> DB[(Oracle DB)]
+  Consumers --> Chain
 
   classDef external fill:#d4d4d4,stroke:#8a8a8a,color:#4a4a4a
   class UF external
@@ -594,13 +572,12 @@ flowchart LR
 
 | Consumer need | Typical source |
 |---------------|----------------|
-| Rail `settledUpTo` / payee side of rail | CDP `GET /filecoin-pay/rails/:railId` |
-| Deal SLI averages | CDP `GET /po-rep/average-sli-data` (often fed by URL Finder measurements) |
-| Indexed deals (filters: provider, piece CID, rail state, …) | CDP `GET /po-rep/deals` |
-| Register deal for RPA measurement | URL Finder `/deals/*` (oracle `URL_FINDER_SERVICE_URL`) |
+| Rail `settledUpTo` / payee side of rail | Hyperion `GET /filecoin-pay/rails/:railId` |
+| Indexed deals (filters: provider, piece CID, rail state, …) | Hyperion `GET /po-rep/deals` |
+| Register deal for RPA measurement | URL Finder `/deals/*` |
 | Provider sample retrieval URL / RPA | URL Finder `/providers/*`, `/url/*` |
 
-CDP stores Filecoin Pay rails with `from` / `to` (payee) and joins them to deals via `railId`. URL Finder is optional locally; without it, deal sync still works but provider/deal HTTP SLI inputs are empty or stale.
+Hyperion stores Filecoin Pay rails with `from` / `to` (payee) and joins them to deals via `railId`. URL Finder is optional locally; without it, provider/deal HTTP SLI inputs are empty or stale.
 
 ---
 
@@ -613,8 +590,7 @@ flowchart TB
   subgraph Host["Host machine"]
     MakeDeal["just make-deal / tooling venv"]
     SingHTTP["Singularity HTTP<br/>:8080 manifest · :7777 pieces"]
-    CDPNest["CDP Nest :23300"]
-    OracleHTTP["Oracle :23100"]
+    HyperionNest["Hyperion Nest :23300"]
   end
 
   subgraph Docker["Docker (Curio compose + helpers)"]
@@ -623,18 +599,14 @@ flowchart TB
     CurioC["curio"]
     YB["yugabyte"]
     PieceSrv["piece-server :12320<br/>(bootstrap only)"]
-    OraclePG["oracle postgres :28038"]
-    CDPPG["cdp postgres :28037"]
+    HyperionPG["hyperion postgres :28037"]
   end
 
   MakeDeal --> LotusC
   MakeDeal --> SingHTTP
   MakeDeal --> CurioC
-  CDPNest --> LotusC
-  CDPNest --> CDPPG
-  OracleHTTP --> LotusC
-  OracleHTTP --> CDPNest
-  OracleHTTP --> OraclePG
+  HyperionNest --> LotusC
+  HyperionNest --> HyperionPG
   CurioC --> LotusC
   CurioC --> YB
 ```
@@ -690,7 +662,7 @@ Rail fields (conceptual):
 |-----|--------|
 | [README.md](README.md) | Bring-up, ports, make-deal, pins |
 | [extern/porep-market/README.md](extern/porep-market/README.md) | Contract ownership + deal state machine |
-| [extern/filecoin-oracle-service/README.md](extern/filecoin-oracle-service/README.md) | Oracle jobs and CDP dependency |
+| [extern/hyperion/README.md](extern/hyperion/README.md) | PoRep/Pay indexer + REST APIs |
 | [extern/filecoin-porep-market-tooling/README.md](extern/filecoin-porep-market-tooling/README.md) | CLI wallets and SP controller setup |
 | [fidlabs/pids-frontend](https://github.com/fidlabs/pids-frontend) | TOADS / PIDS directory UI ([toads.directory](https://toads.directory)) |
 | [fidlabs/provider-sample-url-finder](https://github.com/fidlabs/provider-sample-url-finder) | URL Finder / RPA — SP sample URLs + Deal SLI measurements |

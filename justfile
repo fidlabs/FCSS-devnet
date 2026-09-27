@@ -1,42 +1,39 @@
 # Curio PoRep / FCSS-devnet task runner
 # Run `just` to see all available commands.
-# Submodule tasks: just curio … / porep-market … / tooling … / oracle … / cdp …
+# Submodule tasks: just curio … / porep-market … / tooling … / hyperion …
 
 mod curio 'just/curio.just'
 mod porep-market 'just/porep-market.just'
 mod tooling 'just/tooling.just'
-mod oracle 'just/oracle.just'
-mod cdp 'just/cdp.just'
+mod hyperion 'just/hyperion.just'
 
 default:
     @just --list
 
-# Submodules + Curio patches/images + tooling + oracle/cdp patches + pin-verify
+# Submodules + Curio patches/images + tooling + hyperion patches + pin-verify
 init:
     git submodule update --init --recursive
     just curio init
     just tooling init
-    just oracle patch
-    just cdp patch
+    just hyperion patch
     just pin-verify
 
-# Assert versions.lock.yaml matches submodule HEADs/gitlinks and patches apply
+# Assert versions.lock.yaml matches submodule HEADs/gitlinks and local patches apply
 pin-verify:
     ./scripts/pins/verify.sh
 
-# Compose up + Curio config + porep deploy + SP wiring + CDP + oracle
+# Compose up + Curio config + porep deploy + SP wiring + Hyperion
 up:
     just curio up
     just porep-market deploy
     just porep-market up
-    just cdp up
-    just oracle up
+    just hyperion up
 
 # Stop stack + wipe runtime (volumes, .runtime/, Curio docker/data, .deployment/)
 down:
     ./scripts/down.sh
 
-# Probe RPC / Curio / CDP / oracle / ACTIVE / pins (non-fatal pin warn)
+# Probe RPC / Curio / Hyperion / ACTIVE / pins (non-fatal pin warn)
 status:
     ./scripts/status.sh
 

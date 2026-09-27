@@ -1,5 +1,5 @@
 diff --git a/src/main.ts b/src/main.ts
-index 5e6a202..91f344d 100644
+index 7312676..43beccd 100644
 --- a/src/main.ts
 +++ b/src/main.ts
 @@ -21,7 +21,8 @@ async function bootstrap() {
