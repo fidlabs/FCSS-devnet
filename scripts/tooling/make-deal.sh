@@ -54,10 +54,14 @@ fi
 CLI=("$PYTHON" "${TOOLING_DIR}/porep_tooling_cli.py")
 
 MANIFEST_URL="${MANIFEST_URL:-http://127.0.0.1:8080/manifest.json}"
-PRICE_PER_SECTOR_PER_MONTH="${PRICE_PER_SECTOR_PER_MONTH:-2000000000000000000}" # 2 USDFC
+# tooling master: human decimal tokens / TiB / month (e.g. 2 = 2 USDFC), not wei/sector
+if [[ -n "${PRICE_PER_SECTOR_PER_MONTH+x}" || -n "${RETRIEVABILITY_BPS+x}" ]]; then
+  die "obsolete env PRICE_PER_SECTOR_PER_MONTH / RETRIEVABILITY_BPS — use PRICE_PER_TIB_PER_MONTH / RETRIEVABILITY_PCT (tooling master)"
+fi
+PRICE_PER_TIB_PER_MONTH="${PRICE_PER_TIB_PER_MONTH:-2}"
 DURATION_MONTHS="${DURATION_MONTHS:-6}"
 DEAL_TYPE="${DEAL_TYPE:-private}"
-RETRIEVABILITY_BPS="${RETRIEVABILITY_BPS:-0}"
+RETRIEVABILITY_PCT="${RETRIEVABILITY_PCT:-0}"
 BANDWIDTH_MBPS="${BANDWIDTH_MBPS:-0}"
 LATENCY_MS="${LATENCY_MS:-0}"
 INDEXING_PCT="${INDEXING_PCT:-0}"
@@ -82,9 +86,13 @@ Usage: $(basename "$0") [options]
 
 Options:
   --manifest-url URL              Manifest URL (default: ${MANIFEST_URL})
-  --price-per-sector-per-month N  Wei-equivalent USDFC / sector / month (default: ${PRICE_PER_SECTOR_PER_MONTH})
+  --price-per-tib-per-month N      Max USDFC / TiB / month, decimal (default: ${PRICE_PER_TIB_PER_MONTH})
   --duration-months N             Deal duration in months, min 6 (default: ${DURATION_MONTHS})
   --deal-type TYPE                private|public (default: ${DEAL_TYPE})
+  --retrievability-pct N          Retrievability %, 0 = don't care (default: ${RETRIEVABILITY_PCT})
+  --bandwidth-mbps N              Bandwidth Mbps, 0 = don't care (default: ${BANDWIDTH_MBPS})
+  --latency-ms N                  Latency ms, 0 = don't care (default: ${LATENCY_MS})
+  --indexing-pct N                IPNI indexing %, 0 = don't care (default: ${INDEXING_PCT})
   --deal-id N                     Skip propose; resume from this deal id
   --onboard-dir DIR               Directory for sp onboard-data (default: .runtime/tooling/deal-<id>)
   --piece-base-url URL            Piece CAR base for Curio add-url and host onboard-data (default: ${PIECE_BASE_URL})
@@ -627,20 +635,35 @@ wait_deal_state() {
   die "deal ${deal_id} did not reach ${want} (last state=${state:-unknown})"
 }
 
-# get-deals returns PoRepMarketDeal (no manifest_location); match via get-deal .data.
+# Match deals by manifest_location via getDealCount + get-deal, scoped to CLIENT_ADDRESS
+# (same client filter as the old client get-deals path). Avoid client get-deals:
+# tooling master ABI is paginated; older deployed markets (and mismatched pins)
+# revert on getDeals(offset,limit).
 latest_deal_id_for_manifest() {
   local manifest="$1"
-  local state="${2:-}"
-  local args=(client get-deals) ids id loc best=""
-  [[ -n "$state" ]] && args+=("$state")
-  ids="$(cli_json_retry "${args[@]}" | jq -r '.[].deal_id')"
-  for id in $ids; do
-    [[ -n "$id" && "$id" != "null" ]] || continue
+  local state_filter="${2:-}"
+  local market rpc count id loc st client c want best=""
+  market="$(env_get POREP_MARKET)"
+  rpc="$(env_get RPC_URL || printf '%s' "$RPC_URL")"
+  client="$(env_get CLIENT_ADDRESS | tr '[:upper:]' '[:lower:]')"
+  [[ -n "$client" ]] || return 1
+  # cast may print "2 [2]" annotations — keep the leading integer token (see seed-deals.sh).
+  count="$(
+    cast call "$market" "getDealCount()(uint256)" --rpc-url "$rpc" 2>/dev/null \
+      | tr -d '\r\n' | awk '{print $1; exit}'
+  )"
+  [[ "$count" =~ ^[0-9]+$ && "$count" -gt 0 ]] || return 1
+  want="$(printf '%s' "$state_filter" | tr '[:lower:]' '[:upper:]')"
+  for id in $(seq 1 "$count"); do
     loc="$(deal_view_jq "$id" '.data.manifest_location' 2>/dev/null || true)"
     [[ "$loc" == "$manifest" ]] || continue
-    if [[ -z "$best" ]] || [[ "$id" -gt "$best" ]]; then
-      best="$id"
+    c="$(deal_view_jq "$id" '.deal.client_address' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)"
+    [[ "$c" == "$client" ]] || continue
+    if [[ -n "$want" ]]; then
+      st="$(deal_view_jq "$id" '.deal.state' 2>/dev/null | tr '[:lower:]' '[:upper:]' || true)"
+      [[ "$st" == "$want" ]] || continue
     fi
+    best="$id"
   done
   [[ -n "$best" ]] && printf '%s\n' "$best"
 }
@@ -745,11 +768,11 @@ init_deal() {
       return 0
     fi
 
-    log "client init-accepted-deals ${deal_id} (attempt ${i}/${attempts})"
+    log "client init-deal ${deal_id} (attempt ${i}/${attempts})"
     # First pass may deploy validator then fail on USDFC permit; recover via cast approval.
     # Do not use run_cli_retry here — permit revert is expected and must not abort the script.
     set +e
-    run_cli client init-accepted-deals "$deal_id"
+    run_cli client init-deal "$deal_id"
     set -e
 
     rail="$(deal_view_jq "$deal_id" '.deal.rail_id')"
@@ -764,7 +787,7 @@ init_deal() {
 
   rail="$(deal_view_jq "$deal_id" '.deal.rail_id')"
   [[ "$rail" != "0" && -n "$rail" && "$rail" != "null" ]] \
-    || die "init-accepted-deals left rail_id=0 for deal ${deal_id} after ${attempts} attempts"
+    || die "init-deal left rail_id=0 for deal ${deal_id} after ${attempts} attempts"
 }
 
 # Total pieces = adapter allocationIds still pending evidence + adapter claimIds.
@@ -986,9 +1009,13 @@ wait_until_all_claimed() {
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --manifest-url) MANIFEST_URL="$2"; shift 2 ;;
-    --price-per-sector-per-month) PRICE_PER_SECTOR_PER_MONTH="$2"; shift 2 ;;
+    --price-per-tib-per-month) PRICE_PER_TIB_PER_MONTH="$2"; shift 2 ;;
     --duration-months) DURATION_MONTHS="$2"; shift 2 ;;
     --deal-type) DEAL_TYPE="$2"; shift 2 ;;
+    --retrievability-pct) RETRIEVABILITY_PCT="$2"; shift 2 ;;
+    --bandwidth-mbps) BANDWIDTH_MBPS="$2"; shift 2 ;;
+    --latency-ms) LATENCY_MS="$2"; shift 2 ;;
+    --indexing-pct) INDEXING_PCT="$2"; shift 2 ;;
     --deal-id) DEAL_ID="$2"; shift 2 ;;
     --onboard-dir) ONBOARD_DIR="$2"; shift 2 ;;
     --piece-base-url) PIECE_BASE_URL="$2"; shift 2 ;;
@@ -998,6 +1025,10 @@ while [[ $# -gt 0 ]]; do
     --no-wait-claims) WAIT_CLAIMS=false; shift ;;
     --wait-claims-timeout) WAIT_CLAIMS_TIMEOUT="$2"; shift 2 ;;
     --interactive) YES=false; shift ;;
+    # Removed on tooling master — fail clearly instead of Click "No such option"
+    --price-per-sector-per-month|--retrievability-bps)
+      die "obsolete option $1 — use --price-per-tib-per-month / --retrievability-pct (tooling master)"
+      ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
@@ -1057,10 +1088,10 @@ if [[ -z "$DEAL_ID" ]]; then
   propose_log="$(mktemp)"
   set +e
   set +o pipefail
-  run_cli client propose-deal-from-manifest "$MANIFEST_URL" \
-    --retrievability-bps "$RETRIEVABILITY_BPS" \
+  run_cli client propose-deal "$MANIFEST_URL" \
+    --retrievability-pct "$RETRIEVABILITY_PCT" \
     --bandwidth-mbps "$BANDWIDTH_MBPS" \
-    --price-per-sector-per-month "$PRICE_PER_SECTOR_PER_MONTH" \
+    --price-per-tib-per-month "$PRICE_PER_TIB_PER_MONTH" \
     --duration-months "$DURATION_MONTHS" \
     --latency-ms "$LATENCY_MS" \
     --indexing-pct "$INDEXING_PCT" \
@@ -1081,10 +1112,10 @@ if [[ -z "$DEAL_ID" ]]; then
     for i in $(seq 1 "${CLI_MUTATE_ATTEMPTS:-5}"); do
       log "propose failed (rc=${propose_rc}); retry ${i}"
       set +e
-      run_cli client propose-deal-from-manifest "$MANIFEST_URL" \
-        --retrievability-bps "$RETRIEVABILITY_BPS" \
+      run_cli client propose-deal "$MANIFEST_URL" \
+        --retrievability-pct "$RETRIEVABILITY_PCT" \
         --bandwidth-mbps "$BANDWIDTH_MBPS" \
-        --price-per-sector-per-month "$PRICE_PER_SECTOR_PER_MONTH" \
+        --price-per-tib-per-month "$PRICE_PER_TIB_PER_MONTH" \
         --duration-months "$DURATION_MONTHS" \
         --latency-ms "$LATENCY_MS" \
         --indexing-pct "$INDEXING_PCT" \
@@ -1105,7 +1136,7 @@ if [[ -z "$DEAL_ID" ]]; then
     if DEAL_ID="$(latest_deal_id_for_manifest "$MANIFEST_URL" 2>/dev/null || true)" && [[ -n "$DEAL_ID" ]]; then
       log "propose failed (NoOfferMatched/duplicate?); resuming existing deal_id=${DEAL_ID} for ${MANIFEST_URL}"
     else
-      die "propose-deal-from-manifest failed (rc=${propose_rc}). Often NoOfferMatched = manifest already assigned to SP org, or no matching offer/capacity. Re-run with the same --manifest-url to resume, or: just porep-market up --from-env"
+      die "propose-deal failed (rc=${propose_rc}). Often NoOfferMatched = manifest already assigned to SP org, or no matching offer/capacity. Re-run with the same --manifest-url to resume, or: just porep-market up --from-env"
     fi
   fi
 

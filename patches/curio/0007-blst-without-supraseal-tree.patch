@@ -1,0 +1,26 @@
+diff --git a/scripts/makefiles/10-deps.mk b/scripts/makefiles/10-deps.mk
+--- a/scripts/makefiles/10-deps.mk
++++ b/scripts/makefiles/10-deps.mk
+@@ -62,7 +62,11 @@
+ 
+ $(BLST_DEPS): build/.blst-install ;
+ 
+-build/.blst-install: $(BLST_PATH)
++# BLST sources live under extern/supraseal/deps/blst, but that tree is
++# dockerignored (see .dockerignore). Create the parent and let build-blst.sh
++# clone blst when missing — do not require $(BLST_PATH) as a make prerequisite.
++build/.blst-install:
++	mkdir -p $(BLST_PATH)/deps
+ 	bash scripts/build-blst.sh
+ 	@touch $@
+ 
+diff --git a/scripts/build-blst.sh b/scripts/build-blst.sh
+--- a/scripts/build-blst.sh
++++ b/scripts/build-blst.sh
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env bash
+ 
++mkdir -p extern/supraseal/deps
+ if [ ! -d "extern/supraseal/deps/blst" ]; then
+     git clone https://github.com/supranational/blst.git extern/supraseal/deps/blst
+     (cd extern/supraseal/deps/blst

@@ -8,8 +8,8 @@ submodules:
   curio:
     path: extern/curio
     repository: https://github.com/filecoin-project/curio.git
-    commit: 31073fa3b8be05df55e2a2ba42878bdf0b3747ad
-    ref: v1.28.2
+    commit: da6d1063c56130952da363ab808bee7d446b38d7
+    ref: v1.28.6
     notes: Local patches/curio apply on this tip (env-only; not for upstream).
 
   porep-market:
@@ -22,9 +22,9 @@ submodules:
   filecoin-porep-market-tooling:
     path: extern/filecoin-porep-market-tooling
     repository: https://github.com/fidlabs/filecoin-porep-market-tooling.git
-    commit: aa263743a58cfd895a9adf8ea6566f17e42e60bf
-    ref: feature-v2-adjust-contracts
-    notes: patches/tooling must apply cleanly.
+    commit: 0788dec1cdbb988c21001a82ba21f94fe835aeca
+    ref: master
+    notes: patches/tooling must apply cleanly (submit-evidence + make-allocations claims).
 
 
   hyperion:

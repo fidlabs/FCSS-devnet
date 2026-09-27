@@ -256,11 +256,13 @@ require_file "$DEPLOYMENT_JSON"
 
 # V2 manifest: contracts.* and externalDependencies.* (see Deploy.s.sol)
 POREP_MARKET="$(jq -r '.contracts.PoRepMarket.proxy // empty' "$DEPLOYMENT_JSON")"
+POREP_MARKET_VIEW_HELPER="$(jq -r '.contracts.PoRepMarketViewHelper.address // .contracts.PoRepMarketViewHelper.proxy // empty' "$DEPLOYMENT_JSON")"
 FILECOIN_PAY="$(jq -r '.externalDependencies.FilecoinPay // empty' "$DEPLOYMENT_JSON")"
 SP_REGISTRY="$(jq -r '.contracts.SPRegistry.proxy // empty' "$DEPLOYMENT_JSON")"
 EVIDENCE_ADAPTER="$(jq -r '.contracts.DataCapEvidenceAdapter.proxy // empty' "$DEPLOYMENT_JSON")"
 META_ALLOCATOR="$(jq -r '.externalDependencies.MetaAllocator // empty' "$DEPLOYMENT_JSON")"
 [[ -n "$POREP_MARKET" && "$POREP_MARKET" != null ]] || die "contracts.PoRepMarket.proxy missing from ${DEPLOYMENT_JSON}"
+[[ -n "$POREP_MARKET_VIEW_HELPER" && "$POREP_MARKET_VIEW_HELPER" != null ]] || die "contracts.PoRepMarketViewHelper missing from ${DEPLOYMENT_JSON}"
 [[ -n "$FILECOIN_PAY" && "$FILECOIN_PAY" != null ]] || die "externalDependencies.FilecoinPay missing from ${DEPLOYMENT_JSON}"
 [[ -n "$SP_REGISTRY" && "$SP_REGISTRY" != null ]] || die "contracts.SPRegistry.proxy missing from ${DEPLOYMENT_JSON}"
 [[ -n "$EVIDENCE_ADAPTER" && "$EVIDENCE_ADAPTER" != null ]] || die "contracts.DataCapEvidenceAdapter.proxy missing from ${DEPLOYMENT_JSON}"
@@ -309,9 +311,10 @@ if [[ "$FROM_ENV" == true ]]; then
   set_env_key "$ENV_FILE" CLIENT_PRIVATE_KEY "$CLIENT_PRIVATE_KEY"
   set_env_key "$ENV_FILE" CLIENT_ADDRESS "$CLIENT_ADDRESS"
   set_env_key "$ENV_FILE" POREP_MARKET "$POREP_MARKET"
+  set_env_key "$ENV_FILE" POREP_MARKET_VIEW_HELPER "$POREP_MARKET_VIEW_HELPER"
   set_env_key "$ENV_FILE" FILECOIN_PAY "$FILECOIN_PAY"
   set_env_key "$ENV_FILE" USDC_TOKEN "$USDC_TOKEN"
-  log "synced ADMIN/CLIENT, POREP_MARKET=${POREP_MARKET}, FILECOIN_PAY=${FILECOIN_PAY}, USDC_TOKEN=${USDC_TOKEN}"
+  log "synced ADMIN/CLIENT, POREP_MARKET=${POREP_MARKET}, POREP_MARKET_VIEW_HELPER=${POREP_MARKET_VIEW_HELPER}, FILECOIN_PAY=${FILECOIN_PAY}, USDC_TOKEN=${USDC_TOKEN}"
 else
   require_file "$DEPLOYER_KEY_FILE"
   require_file "$CONTRACT_ADDRESSES_JSON"
@@ -404,6 +407,7 @@ SP_ORGANIZATION=${SP_ORGANIZATION}
 
 # From porep-market/deployments/devnet/latest.json
 POREP_MARKET=${POREP_MARKET}
+POREP_MARKET_VIEW_HELPER=${POREP_MARKET_VIEW_HELPER}
 FILECOIN_PAY=${FILECOIN_PAY}
 
 # USDFC from curio/docker/data/contracts/contract_addresses.json

@@ -1,5 +1,5 @@
 diff --git a/scripts/makefiles/10-deps.mk b/scripts/makefiles/10-deps.mk
-index 7d9d65d0..008fe72d 100644
+index 7d9d65d0..d3596360 100644
 --- a/scripts/makefiles/10-deps.mk
 +++ b/scripts/makefiles/10-deps.mk
 @@ -92,7 +92,10 @@ endif

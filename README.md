@@ -4,7 +4,7 @@
 
 PoRep Market **V2 only** (`extern/porep-market` on `main`): `Deploy.s.sol`, SPRegistry offers, `DataCapEvidenceAdapter`, V2 deal lifecycle. No V1 Client / `just devnet_deploy` flows.
 
-Pinned tips (see [`versions.lock.yaml`](versions.lock.yaml)): **Curio v1.28.2**, **porep-market** `main`, **tooling** `feature-v2-adjust-contracts`, **Hyperion** [`hyperion`](https://github.com/fidlabs/hyperion) `main`.
+Pinned tips (see [`versions.lock.yaml`](versions.lock.yaml)): **Curio v1.28.6**, **porep-market** `main`, **tooling** `master`, **Hyperion** [`hyperion`](https://github.com/fidlabs/hyperion) `main`.
 
 ## Prerequisites
 
@@ -168,9 +168,9 @@ Orchestration: [`scripts/porep-market/`](scripts/porep-market/) + [`scripts/tool
 
 | Dependency | Role |
 |------------|------|
-| [`curio`](extern/curio) (**v1.28.2**) | Lotus + Curio docker stack |
+| [`curio`](extern/curio) (**v1.28.6**) | Lotus + Curio docker stack |
 | [`porep-market`](extern/porep-market) (**main** / V2) | Market, SPRegistry, DataCapEvidenceAdapter |
-| [`filecoin-porep-market-tooling`](extern/filecoin-porep-market-tooling) (`feature-v2-adjust-contracts`) | Client / SP / admin CLI |
+| [`filecoin-porep-market-tooling`](extern/filecoin-porep-market-tooling) (`master`) | Client / SP / admin CLI |
 | [`hyperion`](extern/hyperion) (`main`) | PoRep/Pay indexer + REST APIs |
 | [`large-paid-retrievals`](https://github.com/fidlabs/large-paid-retrievals) | `sp-proxy` + `retrieval-client` against this devnet |
 
@@ -200,7 +200,7 @@ Namespaced:
 
 ### Upstream patch TODO
 
-- **Tooling** — [`patches/tooling/`](patches/tooling/): compose deal view, `submit-evidence`, `proposeDeal` `dealType`. Drop once merged.
+- **Tooling** — [`patches/tooling/`](patches/tooling/): `admin submit-evidence`, ACCEPTED-with-claims in `make-allocations`, Curio `t0` ActorId prefix. Drop once merged.
 - **Hyperion** — [`patches/hyperion/`](patches/hyperion/): Curio chain id `31415926`, genesis origin, `PORT` env. Drop once upstream supports local FEVM.
 - **Curio** — [`patches/curio/`](patches/curio/) are **environmental only** (host ports, IPNI, docker build); not for upstream.
 
