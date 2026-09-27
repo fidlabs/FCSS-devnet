@@ -1,23 +1,23 @@
 diff --git a/cli/commands/admin/__init__.py b/cli/commands/admin/__init__.py
-index dbd1eb5..fca2ba5 100644
+index fc0d318..a706e68 100644
 --- a/cli/commands/admin/__init__.py
 +++ b/cli/commands/admin/__init__.py
-@@ -9,6 +9,7 @@ from .pause_sp import pause_sp
- from .register_sps import register_db_sps, register_devnet_sps
- from .set_completion_padding import set_completion_padding
- from .set_role import set_role
+@@ -13,6 +13,7 @@ from .set_completion_padding import set_completion_padding
+ from .set_offer_active import set_offer_active
+ from .set_payment_token import set_payment_token
+ from .set_role import set_role, has_role
 +from .submit_evidence import submit_evidence
  from .terminate_deal import terminate_deal
- from .unblock_sp import unblock_sp
- from .unpause_sp import unpause_sp
-@@ -35,3 +36,4 @@ admin.add_command(register_devnet_sps)
+ 
+ admin.add_command(propose_deal_for_offer)
+@@ -43,3 +44,4 @@ admin.add_command(register_mocked_sps)
  admin.add_command(set_completion_padding)
  admin.add_command(set_offer_active)
  admin.add_command(get_offers)
 +admin.add_command(submit_evidence)
 diff --git a/cli/commands/admin/submit_evidence.py b/cli/commands/admin/submit_evidence.py
 new file mode 100644
-index 0000000..e0eae94
+index 0000000..59f1083
 --- /dev/null
 +++ b/cli/commands/admin/submit_evidence.py
 @@ -0,0 +1,145 @@
@@ -30,6 +30,7 @@ index 0000000..e0eae94
 +from cli.commands import utils as commands_utils
 +from cli.commands.admin._admin import admin_address, admin_signer
 +from cli.services.contracts.porep_market import PoRepMarket, PoRepMarketDealState
++from cli.services.contracts.porep_market_view_helper import PoRepMarketViewHelper
 +from cli.services.web3_service import Web3Service
 +
 +# Matches oracle EVIDENCE_BATCH_SIZE default.
@@ -42,7 +43,7 @@ index 0000000..e0eae94
 +
 +def _submit_one_batch(deal_id: int, batch_size: int) -> str:
 +    evidence_data = _encode_batch_size(batch_size)
-+    return PoRepMarket().submit_evidence_batch(deal_id, evidence_data, admin_signer())
++    return PoRepMarket().submit_evidence_batch(deal_id, evidence_data, admin_signer()).tx_hash
 +
 +
 +@click.command("submit-evidence")
@@ -95,8 +96,7 @@ index 0000000..e0eae94
 +
 +    Web3Service().wait_for_pending_transactions(admin_address())
 +
-+    market = PoRepMarket()
-+    deal = market.get_deal_view(deal_id).deal
++    deal = PoRepMarketViewHelper().get_deal_view(deal_id).deal
 +
 +    if deal.state not in (PoRepMarketDealState.ACCEPTED, PoRepMarketDealState.ACTIVE):
 +        raise click.ClickException(f"Deal ID {deal_id} is in state {deal.state}; expected ACCEPTED or ACTIVE")
@@ -131,7 +131,7 @@ index 0000000..e0eae94
 +        click.echo(f"submitEvidenceBatch tx: {tx_hash}")
 +        submitted_any = True
 +
-+        deal = market.get_deal_view(deal_id).deal
++        deal = PoRepMarketViewHelper().get_deal_view(deal_id).deal
 +        remaining = commands_utils.get_deal_allocation_ids(deal)
 +        claimed = commands_utils.get_deal_claim_ids(deal)
 +        progressed = len(remaining) < before

@@ -1,5 +1,5 @@
 diff --git a/web/api/webrpc/ipni.go b/web/api/webrpc/ipni.go
-index a101ee13..5a6c9517 100644
+index 47265e12..7534f309 100644
 --- a/web/api/webrpc/ipni.go
 +++ b/web/api/webrpc/ipni.go
 @@ -242,10 +242,11 @@ type ParsedResponse struct {
@@ -7,7 +7,7 @@ index a101ee13..5a6c9517 100644
  	var summary []*IPNI
  
 +	// COALESCE: PDP peers can exist in ipni_peerid before any ad head is written.
- 	err := a.deps.DB.Select(ctx, &summary, `SELECT 
+ 	err := a.Deps.DB.Select(ctx, &summary, `SELECT 
  												ipp.sp_id,
  												ipp.peer_id,
 -												ih.head
@@ -22,5 +22,5 @@ index a101ee13..5a6c9517 100644
 -			if parsed.LastAdvertisement.Slash != d.Head {
 +			if d.Head != "" && parsed.LastAdvertisement.Slash != "" && parsed.LastAdvertisement.Slash != d.Head {
  				var diff int64
- 				err := a.deps.DB.QueryRow(ctx, `WITH cte AS (
+ 				err := a.Deps.DB.QueryRow(ctx, `WITH cte AS (
  															SELECT ad_cid, order_number

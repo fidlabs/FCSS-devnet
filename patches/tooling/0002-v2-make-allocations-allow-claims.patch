@@ -1,0 +1,15 @@
+diff --git a/cli/commands/client/make_allocations.py b/cli/commands/client/make_allocations.py
+index 1facec6..7b520ea 100644
+--- a/cli/commands/client/make_allocations.py
++++ b/cli/commands/client/make_allocations.py
+@@ -83,8 +83,8 @@ def make_allocations(deal_id: int, print_only: bool = False, exclude_dag: bool =
+ 
+     click.echo(f"Found {len(deal_allocations)} allocations already made and {len(deal_claims)} claims for deal ID {deal_id}.")
+ 
+-    if deal_claims:
+-        raise RuntimeError("Some allocations claimed but deal still in ACCEPTED state.")
++    # V2: deal stays ACCEPTED after DataCap posting (and while claims appear). Claims are
++    # not a make-allocations failure mode — only unfinished piece posting matters here.
+ 
+     if local_manifest:
+         manifest, _ = commands_utils.fetch_local_manifest(Path(local_manifest).resolve())

@@ -1,0 +1,12 @@
+diff --git a/cli/services/web3_service.py b/cli/services/web3_service.py
+--- a/cli/services/web3_service.py
++++ b/cli/services/web3_service.py
+@@ -18,7 +18,7 @@
+         VALID_PREFIX_PER_CHAIN_ID = {
+             314: "f0",  # Filecoin Mainnet
+             314159: "t0",  # Filecoin Calibration Testnet
+-            31415926: "f0",  # Lotus devnet
++            31415926: "t0",  # Lotus/Curio local docker-devnet (t-addresses)
+         }
+ 
+         chain_id = Web3Service().get_chain_id()

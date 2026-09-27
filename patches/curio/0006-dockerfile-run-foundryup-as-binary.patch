@@ -1,0 +1,14 @@
+diff --git a/Dockerfile b/Dockerfile
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -84,8 +84,9 @@ RUN apt-get update && apt-get install -y dnsutils vim curl aria2 jq git wget ca-
+     && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && apt-get install nodejs -y
+ 
+ # Install Foundry
++# foundryup is a binary (not a shell script); run it, do not `source` / `.` it.
+ RUN curl -L https://foundry.paradigm.xyz | bash \
+-    && bash -c ". ~/.foundry/bin/foundryup"
++    && /root/.foundry/bin/foundryup
+ 
+ # Make sure foundry binaries are available in PATH
+ ENV PATH="/root/.foundry/bin:${PATH}"
