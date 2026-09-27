@@ -647,9 +647,10 @@ latest_deal_id_for_manifest() {
   rpc="$(env_get RPC_URL || printf '%s' "$RPC_URL")"
   client="$(env_get CLIENT_ADDRESS | tr '[:upper:]' '[:lower:]')"
   [[ -n "$client" ]] || return 1
+  # cast may print "2 [2]" annotations — keep the leading integer token (see seed-deals.sh).
   count="$(
     cast call "$market" "getDealCount()(uint256)" --rpc-url "$rpc" 2>/dev/null \
-      | tr -d '[:space:]'
+      | tr -d '\r\n' | awk '{print $1; exit}'
   )"
   [[ "$count" =~ ^[0-9]+$ && "$count" -gt 0 ]] || return 1
   want="$(printf '%s' "$state_filter" | tr '[:lower:]' '[:upper:]')"
