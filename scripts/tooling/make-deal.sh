@@ -55,6 +55,9 @@ CLI=("$PYTHON" "${TOOLING_DIR}/porep_tooling_cli.py")
 
 MANIFEST_URL="${MANIFEST_URL:-http://127.0.0.1:8080/manifest.json}"
 # tooling master: human decimal tokens / TiB / month (e.g. 2 = 2 USDFC), not wei/sector
+if [[ -n "${PRICE_PER_SECTOR_PER_MONTH+x}" || -n "${RETRIEVABILITY_BPS+x}" ]]; then
+  die "obsolete env PRICE_PER_SECTOR_PER_MONTH / RETRIEVABILITY_BPS — use PRICE_PER_TIB_PER_MONTH / RETRIEVABILITY_PCT (tooling master)"
+fi
 PRICE_PER_TIB_PER_MONTH="${PRICE_PER_TIB_PER_MONTH:-2}"
 DURATION_MONTHS="${DURATION_MONTHS:-6}"
 DEAL_TYPE="${DEAL_TYPE:-private}"
@@ -632,15 +635,18 @@ wait_deal_state() {
   die "deal ${deal_id} did not reach ${want} (last state=${state:-unknown})"
 }
 
-# Match deals by manifest_location via getDealCount + get-deal.
-# Avoid client get-deals: tooling master ABI is paginated; older deployed markets
-# (and mismatched pins) revert on getDeals(offset,limit).
+# Match deals by manifest_location via getDealCount + get-deal, scoped to CLIENT_ADDRESS
+# (same client filter as the old client get-deals path). Avoid client get-deals:
+# tooling master ABI is paginated; older deployed markets (and mismatched pins)
+# revert on getDeals(offset,limit).
 latest_deal_id_for_manifest() {
   local manifest="$1"
   local state_filter="${2:-}"
-  local market rpc count id loc st want best=""
+  local market rpc count id loc st client c want best=""
   market="$(env_get POREP_MARKET)"
   rpc="$(env_get RPC_URL || printf '%s' "$RPC_URL")"
+  client="$(env_get CLIENT_ADDRESS | tr '[:upper:]' '[:lower:]')"
+  [[ -n "$client" ]] || return 1
   count="$(
     cast call "$market" "getDealCount()(uint256)" --rpc-url "$rpc" 2>/dev/null \
       | tr -d '[:space:]'
@@ -650,6 +656,8 @@ latest_deal_id_for_manifest() {
   for id in $(seq 1 "$count"); do
     loc="$(deal_view_jq "$id" '.data.manifest_location' 2>/dev/null || true)"
     [[ "$loc" == "$manifest" ]] || continue
+    c="$(deal_view_jq "$id" '.deal.client_address' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)"
+    [[ "$c" == "$client" ]] || continue
     if [[ -n "$want" ]]; then
       st="$(deal_view_jq "$id" '.deal.state' 2>/dev/null | tr '[:lower:]' '[:upper:]' || true)"
       [[ "$st" == "$want" ]] || continue
