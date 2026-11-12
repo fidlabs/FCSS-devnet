@@ -11,6 +11,8 @@ Unified diffs applied by [`scripts/curio/init.sh`](../../scripts/curio/init.sh) 
 | `0005-fcss-host-ports.patch` | Publish Curio/Lotus/Yugabyte/indexer on FCSS host ports (`2234`, `22300`, `22310`, …) and set `DEV_CURIO_EXTERNAL_URL` to `:22310` |
 | `0006-dockerfile-run-foundryup-as-binary.patch` | Run `foundryup` as a binary (Foundry installer no longer ships a sourceable script) |
 | `0007-blst-without-supraseal-tree.patch` | BLST install: `mkdir -p` + clone under dockerignored `extern/supraseal` (no make prerequisite on that path) |
+| `0008-golang-1.26.10-pin.patch` | **TEMPORARY** — pin Docker builders to `golang:1.26.10-trixie`. Go 1.26.11 CVE-2026-97038 rejects LTO/`.llvmbc` in `libfilcrypto.a`; CVE-2026-97039 rejects local `.pc` paths in `#cgo pkg-config`. **Remove when upstream filecoin-ffi/curio works on Go 1.26.11+.** |
+| `0009-devnet-up-stop-before-wipe.patch` | `devnet/up`: `compose down` before `rm -rf ./docker/data` so bind mounts (yugabyte) release files; avoids macOS `Directory not empty` |
 
 **Dropped:** `git describe` soft-fail — landed upstream as `CURIO_BUILD_COMMIT ?= … \|\| echo unknown` in `00-vars.mk`.
 

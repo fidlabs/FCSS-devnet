@@ -1,0 +1,25 @@
+diff --git a/Dockerfile b/Dockerfile
+index 0000000..0000001 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -6,7 +6,10 @@
+ FROM rust:1.86.0-slim-bookworm AS rust-toolchain
+ 
+ ####################################
+-FROM golang:1.26-trixie AS curio-builder
++# TEMPORARY — pin Go 1.26.10; remove when upstream filecoin-ffi/curio works on 1.26.11+.
++# Go 1.26.11 (CVE-2026-97039) rejects local .pc paths in #cgo pkg-config and
++# (CVE-2026-97038) rejects LTO/.llvmbc sections in #cgo LDFLAGS archives such as libfilcrypto.a.
++FROM golang:1.26.10-trixie AS curio-builder
+ LABEL Maintainer="Curio Development Team"
+ 
+ RUN apt-get update && apt-get install -y ca-certificates build-essential clang ocl-icd-opencl-dev ocl-icd-libopencl1 jq libhwloc-dev
+@@ -63,7 +66,7 @@
+     make build
+ 
+ ####################################
+-FROM golang:1.26-trixie AS piece-server-builder
++FROM golang:1.26.10-trixie AS piece-server-builder
+ 
+ RUN go install github.com/ipld/go-car/cmd/car@latest \
+  && cp $GOPATH/bin/car /usr/local/bin/

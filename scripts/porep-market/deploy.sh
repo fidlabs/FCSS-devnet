@@ -30,6 +30,40 @@ contract_codesize() {
   cast codesize "$addr" --rpc-url "$RPC_URL" 2>/dev/null | tr -d '[:space:]'
 }
 
+# forge/cast --json often prints alloy "null round" ERROR lines before the JSON
+# blob on FEVM null epochs; jq on the full capture then fails. Prefer extracting
+# deployedTo / contractAddress via regex, then fall back to jq / text forms.
+parse_forge_create_address() {
+  local out="$1"
+  local deployed=""
+
+  deployed="$(printf '%s\n' "$out" \
+    | grep -oE '"(deployedTo|contractAddress)"[[:space:]]*:[[:space:]]*"0x[0-9a-fA-F]{40}"' \
+    | tail -n1 \
+    | grep -oE '0x[0-9a-fA-F]{40}' || true)"
+
+  if [[ -z "$deployed" ]]; then
+    # Last JSON object line-group (multi-line forge --json).
+    deployed="$(printf '%s\n' "$out" \
+      | awk 'BEGIN{obj=""} /^\s*\{/{obj=$0; next} obj!=""{obj=obj"\n"$0} /^\s*\}/{if(obj!=""){print obj"\n}"; obj=""}}' \
+      | tail -n1 \
+      | jq -r '.deployedTo // .contractAddress // empty' 2>/dev/null \
+      | tr -d '[:space:]' || true)"
+  fi
+
+  if [[ -z "$deployed" || "$deployed" == "null" ]]; then
+    deployed="$(printf '%s\n' "$out" \
+      | jq -r 'if type=="array" then .[-1].deployedTo // .[-1].contractAddress // empty else .deployedTo // .contractAddress // empty end' 2>/dev/null \
+      | tr -d '[:space:]' || true)"
+  fi
+
+  if [[ -z "$deployed" || "$deployed" == "null" ]]; then
+    deployed="$(printf '%s\n' "$out" | awk '/Deployed to:/{print $NF; exit}' | tr -d '[:space:]')"
+  fi
+
+  printf '%s\n' "$deployed"
+}
+
 deploy_noop_meta_allocator() {
   local pk="$1"
   local bytecode deployed out
@@ -52,10 +86,7 @@ deploy_noop_meta_allocator() {
       --create "$bytecode" 2>&1
   )" || die "NoOpMetaAllocator deploy failed: ${out}"
 
-  deployed="$(printf '%s\n' "$out" | jq -r '.contractAddress // empty' | tr -d '[:space:]')"
-  if [[ -z "$deployed" || "$deployed" == "null" ]]; then
-    deployed="$(printf '%s\n' "$out" | awk '/contractAddress/{print $NF; exit}' | tr -d '[:space:]\",')"
-  fi
+  deployed="$(parse_forge_create_address "$out")"
   [[ "$deployed" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "could not parse NoOpMetaAllocator address from: ${out}"
   [[ "$(contract_codesize "$deployed")" -gt 0 ]] || die "NoOpMetaAllocator at ${deployed} has no code"
   printf '%s\n' "$deployed"
@@ -82,13 +113,7 @@ deploy_porep_market_view_helper() {
       --constructor-args "$market" 2>&1
   )" || die "PoRepMarketViewHelper deploy failed: ${out}"
 
-  deployed="$(printf '%s\n' "$out" | jq -r 'if type=="array" then .[-1].deployedTo // .[-1].contractAddress // empty else .deployedTo // .contractAddress // empty end' 2>/dev/null | tr -d '[:space:]')"
-  if [[ -z "$deployed" || "$deployed" == "null" ]]; then
-    deployed="$(printf '%s\n' "$out" | awk '/Deployed to:/{print $NF; exit}' | tr -d '[:space:]')"
-  fi
-  if [[ -z "$deployed" || "$deployed" == "null" ]]; then
-    deployed="$(printf '%s\n' "$out" | jq -r '.. | objects | .deployedTo // .contractAddress // empty' 2>/dev/null | grep -E '^0x[0-9a-fA-F]{40}$' | tail -n1 || true)"
-  fi
+  deployed="$(parse_forge_create_address "$out")"
   [[ "$deployed" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "could not parse PoRepMarketViewHelper address from: ${out}"
   [[ "$(contract_codesize "$deployed")" -gt 0 ]] || die "PoRepMarketViewHelper at ${deployed} has no code"
   printf '%s\n' "$deployed"
@@ -115,13 +140,7 @@ deploy_porep_market_claim_inspector() {
       --constructor-args "$adapter" "$market" 2>&1
   )" || die "PoRepMarketClaimInspector deploy failed: ${out}"
 
-  deployed="$(printf '%s\n' "$out" | jq -r 'if type=="array" then .[-1].deployedTo // .[-1].contractAddress // empty else .deployedTo // .contractAddress // empty end' 2>/dev/null | tr -d '[:space:]')"
-  if [[ -z "$deployed" || "$deployed" == "null" ]]; then
-    deployed="$(printf '%s\n' "$out" | awk '/Deployed to:/{print $NF; exit}' | tr -d '[:space:]')"
-  fi
-  if [[ -z "$deployed" || "$deployed" == "null" ]]; then
-    deployed="$(printf '%s\n' "$out" | jq -r '.. | objects | .deployedTo // .contractAddress // empty' 2>/dev/null | grep -E '^0x[0-9a-fA-F]{40}$' | tail -n1 || true)"
-  fi
+  deployed="$(parse_forge_create_address "$out")"
   [[ "$deployed" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "could not parse PoRepMarketClaimInspector address from: ${out}"
   [[ "$(contract_codesize "$deployed")" -gt 0 ]] || die "PoRepMarketClaimInspector at ${deployed} has no code"
   printf '%s\n' "$deployed"
@@ -147,13 +166,7 @@ deploy_porep_market_sector_status_inspector() {
       --constructor-args "$market" 2>&1
   )" || die "PoRepMarketSectorStatusInspector deploy failed: ${out}"
 
-  deployed="$(printf '%s\n' "$out" | jq -r 'if type=="array" then .[-1].deployedTo // .[-1].contractAddress // empty else .deployedTo // .contractAddress // empty end' 2>/dev/null | tr -d '[:space:]')"
-  if [[ -z "$deployed" || "$deployed" == "null" ]]; then
-    deployed="$(printf '%s\n' "$out" | awk '/Deployed to:/{print $NF; exit}' | tr -d '[:space:]')"
-  fi
-  if [[ -z "$deployed" || "$deployed" == "null" ]]; then
-    deployed="$(printf '%s\n' "$out" | jq -r '.. | objects | .deployedTo // .contractAddress // empty' 2>/dev/null | grep -E '^0x[0-9a-fA-F]{40}$' | tail -n1 || true)"
-  fi
+  deployed="$(parse_forge_create_address "$out")"
   [[ "$deployed" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "could not parse PoRepMarketSectorStatusInspector address from: ${out}"
   [[ "$(contract_codesize "$deployed")" -gt 0 ]] || die "PoRepMarketSectorStatusInspector at ${deployed} has no code"
   printf '%s\n' "$deployed"

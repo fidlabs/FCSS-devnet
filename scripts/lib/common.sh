@@ -56,6 +56,44 @@ require_file() {
   [[ -f "$1" ]] || die "missing required file: $1"
 }
 
+# Prefer DIR/.nvmrc (else $2) via nvm when the active Node is outside engines.
+# Usage: ensure_node_version DIR [fallback_version]
+ensure_node_version() {
+  local dir="$1"
+  local fallback="${2:-}"
+  local wanted nvm_sh
+  require_cmd node
+
+  if [[ -f "${dir}/.nvmrc" ]]; then
+    wanted="$(tr -d '[:space:]v' <"${dir}/.nvmrc")"
+  else
+    wanted="$(tr -d '[:space:]v' <<<"${fallback}")"
+  fi
+  [[ -n "$wanted" ]] || die "ensure_node_version: no .nvmrc in ${dir} and no fallback version"
+
+  if node -e "
+    const want = process.argv[1].split('.').map(Number);
+    const have = process.versions.node.split('.').map(Number);
+    for (let i = 0; i < 3; i++) {
+      const w = want[i] || 0, h = have[i] || 0;
+      if (h > w) process.exit(0);
+      if (h < w) process.exit(1);
+    }
+    process.exit(0);
+  " "$wanted" 2>/dev/null; then
+    return 0
+  fi
+
+  nvm_sh="${NVM_DIR:-${HOME}/.nvm}/nvm.sh"
+  [[ -s "$nvm_sh" ]] || die "need Node ${wanted}+ (have $(node -v)); install with nvm: nvm install ${wanted} && nvm use ${wanted}"
+
+  log "Node $(node -v) is below ${wanted}; switching via nvm"
+  # shellcheck disable=SC1090
+  source "$nvm_sh"
+  nvm use "$wanted" >/dev/null || die "nvm use ${wanted} failed (try: nvm install ${wanted})"
+  log "using Node $(node -v) / npm $(npm -v 2>/dev/null || echo '?')"
+}
+
 require_container() {
   docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null | grep -qx true \
     || die "docker container '$1' is not running"
@@ -75,6 +113,14 @@ apply_patches() {
   log "resetting ${label} working tree to pinned submodule commit"
   git -C "$target_dir" reset --hard HEAD
   git -C "$target_dir" clean -fd "$@"
+  # Nested submodule working trees (e.g. curio/extern/filecoin-ffi) are not
+  # reset by the parent reset --hard; dirty nested files break patches that
+  # edit them. Sync nested checkouts to the gitlink commits, then hard-reset.
+  if [[ -f "$target_dir/.gitmodules" ]]; then
+    git -C "$target_dir" submodule sync --recursive >/dev/null
+    git -C "$target_dir" submodule update --init --recursive
+    git -C "$target_dir" submodule foreach --recursive 'git reset --hard HEAD && git clean -fd' >/dev/null
+  fi
 
   log "applying ${label} patches from ${patch_dir#"$REPO_ROOT"/}"
   shopt -s nullglob

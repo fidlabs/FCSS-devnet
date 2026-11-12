@@ -57,9 +57,12 @@ LOG_FILE="${RUNTIME_ROOT}/hyperion.log"
 [[ -d "$HYPERION_DIR" ]] || die "hyperion submodule missing at ${HYPERION_DIR} (run: git submodule update --init --recursive)"
 require_file "$COMPOSE_FILE"
 require_cmd docker
-require_cmd npm
 require_cmd jq
 require_cmd curl
+# Prisma 7 / Hyperion engines: Node >=24.11.1 (see extern/hyperion/.nvmrc).
+# Active shells on older Node hit: TypeError: util.styleText is not a function.
+ensure_node_version "$HYPERION_DIR" "24.11.1"
+require_cmd npm
 
 hyperion_compose() {
   FCSS_HYPERION_PG_HOST_PORT="${FCSS_HYPERION_PG_HOST_PORT}" \

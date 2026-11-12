@@ -1,0 +1,17 @@
+diff --git a/scripts/makefiles/50-docker.mk b/scripts/makefiles/50-docker.mk
+index 0000000..0000001 100644
+--- a/scripts/makefiles/50-docker.mk
++++ b/scripts/makefiles/50-docker.mk
+@@ -80,7 +80,11 @@
+ .PHONY: docker/devnet
+ 
+ devnet/up:
+-	rm -rf ./docker/data && docker compose -f ./docker/docker-compose.yaml up -d
++	# Stop first so bind-mounted volumes (esp. yugabyte) release files; otherwise
++	# macOS `rm -rf ./docker/data` fails with "Directory not empty".
++	docker compose -f ./docker/docker-compose.yaml down
++	rm -rf ./docker/data
++	docker compose -f ./docker/docker-compose.yaml up -d
+ 
+ devnet/down:
+ 	docker compose -f ./docker/docker-compose.yaml down --rmi=local && sleep 2 && rm -rf ./docker/data
